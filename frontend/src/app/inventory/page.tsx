@@ -111,7 +111,7 @@ export default function Inventory() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-[1520px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Inventory Header */}
         <div className="md:flex md:items-center md:justify-between mb-8">
           <div className="flex-1 min-w-0">

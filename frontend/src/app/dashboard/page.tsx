@@ -5,69 +5,90 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import axios from 'axios';
+import { format } from 'date-fns'; // Import date-fns for formatting
 
-// Remove mock data
-// const mockOrders = [
-//   { id: 'SHO12345', customer: 'John Doe', date: '2025-04-15', status: 'Processing', items: 3, total: '$129.99' },
-//   { id: 'SHO12346', customer: 'Jane Smith', date: '2025-04-14', status: 'Shipped', items: 1, total: '$59.99' },
-//   { id: 'SHO12347', customer: 'Robert Johnson', date: '2025-04-14', status: 'Pending', items: 2, total: '$89.99' },
-//   { id: 'SHO12348', customer: 'Emily Davis', date: '2025-04-13', status: 'Delivered', items: 4, total: '$199.99' },
-//   { id: 'SHO12349', customer: 'Michael Wilson', date: '2025-04-13', status: 'Processing', items: 2, total: '$79.99' },
-// ];
+// Define an interface for the order structure
+interface Order {
+  id: string;
+  orderNumber: string;
+  customer: string;
+  date: string; // Keep original date string for potential use
+  formattedDate: string; // Add formatted date string
+  channel: string;
+  total: string;
+  paymentStatus: string;
+  fulfillmentStatus: string;
+  items: string;
+  deliveryStatus: string;
+  deliveryMethod: string;
+  tags: string;
+}
 
 export default function Dashboard() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const [orders, setOrders] = useState([]); // Initialize with empty array
+  const [orders, setOrders] = useState<Order[]>([]); // Use the Order interface
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
   const [syncStatus, setSyncStatus] = useState('idle'); // idle, syncing, success, error
 
   useEffect(() => {
-    console.log(status, "status_dashboard_index");
-
     if (status === 'unauthenticated') {
       router.push('/login');
     }
   }, [status, router]);
 
-  useEffect(() => {
-    const fetchOrders = async () => {
-      try {
-        const response = await axios.get('/api/shopify/sync');
-        setOrders(response.data.orders.map((order: any) => ({
-          id: order.id,
-          customer: `${order.customer?.first_name} ${order.customer?.last_name}`,
-          date: new Date(order.created_at).toISOString().split('T')[0],
-          status: order.financial_status,
-          items: order.line_items.length,
-          total: `$${order.total_price}`
-        })));
-      } catch (error) {
-        console.error('Error fetching orders:', error);
-        setOrders([]);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-    fetchOrders();
-  }, [status, router]);
+  // Function to fetch orders
+  const fetchOrders = async () => {
+    setIsLoading(true); // Set loading true when fetching starts
+    try {
+      // Fetch from the new endpoint
+      const response = await axios.get('/api/shopify/orders');
+      console.log(response.data, " : orders from /api/shopify/orders");
 
+      if (response.data.success && Array.isArray(response.data.orders)) {
+        setOrders(response.data.orders.map((order: any): Order => ({ // Map to the Order interface
+          id: order.id.toString(), // Ensure ID is string
+          orderNumber: order.order_number || order.name?.replace('#', '') || `ID:${order.id}`, // Fallback if order_number is missing
+          customer: order.customer ? `${order.customer?.first_name || ''} ${order.customer?.last_name || ''}`.trim() : 'No customer',
+          date: order.created_at, // Store original date
+          formattedDate: order.created_at ? format(new Date(order.created_at), 'MMM d, h:mm a') : 'N/A',
+          channel: order.source_name || 'Online Store',
+          total: order.currency ? `${order.currency} ${order.total_price}` : `$${order.total_price}`,
+          paymentStatus: order.financial_status || 'Pending',
+          fulfillmentStatus: order.fulfillment_status || 'Unfulfilled',
+          items: `${order.line_items?.length || 0} items`,
+          deliveryStatus: order.fulfillment_status === 'fulfilled' ? 'Shipped' : 'Pending',
+          deliveryMethod: order.shipping_lines?.[0]?.title || 'Shipping',
+          tags: order.tags || ''
+        })));
+      } else {
+        console.error('Error fetching orders: API response unsuccessful or invalid format');
+        setOrders([]); // Set to empty array on error
+      }
+    } catch (error) {
+      console.error('Error fetching orders:', error);
+      setOrders([]); // Set to empty array on error
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (status === 'authenticated') {
+      fetchOrders(); // Fetch orders when authenticated
+    }
+  }, [status]); // Rerun when status changes
+
+  // Keep handleSync as is, or update it if needed for other actions
   const handleSync = async () => {
     setSyncStatus('syncing');
     try {
-      await axios.post('/api/shopify/sync', { action: 'sync_all' });
-      const response = await axios.get('/api/shopify/sync');
-      console.log(response, ": response");
+      // Example: Trigger a full sync via a different endpoint or action if needed
+      // await axios.post('/api/shopify/sync', { action: 'sync_all' });
 
-      setOrders(response.data.orders.map((order: any) => ({
-        id: order.id,
-        customer: `${order.customer?.first_name} ${order.customer?.last_name}`,
-        date: new Date(order.created_at).toISOString().split('T')[0],
-        status: order.financial_status,
-        items: order.line_items.length,
-        total: `$${order.total_price}`
-      })));
+      // Re-fetch orders after sync action
+      await fetchOrders();
       setSyncStatus('success');
     } catch (error) {
       console.error('Sync failed:', error);
@@ -77,9 +98,33 @@ export default function Dashboard() {
     }
   };
 
-  const filteredOrders = activeTab === 'all'
-    ? orders
-    : orders.filter((order: any) => order.status.toLowerCase() === activeTab);
+  // Filter orders based on active tab
+  const filteredOrders = (() => {
+    switch (activeTab) {
+      case 'all':
+        return orders;
+      case 'unfulfilled':
+        return orders.filter((order) => order.fulfillmentStatus === 'Unfulfilled' || order.fulfillmentStatus === null);
+      case 'unpaid':
+        // Include various pending/unpaid statuses
+        const unpaidStatuses = ['pending', 'unpaid', 'partially_paid', 'authorized', 'voided'];
+        return orders.filter((order) => unpaidStatuses.includes(order.paymentStatus.toLowerCase()));
+      case 'open':
+        // Open means not fulfilled OR not fully paid (excluding voided/refunded)
+        const paidStatuses = ['paid', 'partially_refunded', 'refunded']; // Consider refunded as 'closed' for payment
+        return orders.filter((order) =>
+          (order.fulfillmentStatus !== 'fulfilled' && order.fulfillmentStatus !== 'cancelled') ||
+          !paidStatuses.includes(order.paymentStatus.toLowerCase())
+        );
+      case 'archived':
+        // Note: Shopify API might require specific query for archived orders.
+        // This filter assumes 'archived' status might be present in tags or a specific field.
+        // Adjust based on how you handle archived orders.
+        return orders.filter((order: any) => order.status === 'Archived'); // Placeholder
+      default:
+        return orders;
+    }
+  })();
 
   if (status === 'loading' || isLoading) {
     return (
@@ -98,9 +143,13 @@ export default function Dashboard() {
             <h1 className="text-xl font-bold text-indigo-600">Shopify-WMS Integration</h1>
           </div>
           <div className="flex items-center space-x-4">
-            {/* <span className="text-sm text-gray-700">
-              Welcome, {session?.user?.name || 'User'}
-            </span> */}
+            {/* Add Inventory Link */}
+            <Link href="/inventory" className="text-gray-600 hover:text-gray-900">
+              Inventory
+            </Link>
+            <span className="text-sm text-gray-700">
+              Welcome, {session?.user?.id || 'User'}
+            </span>
             <Link href="/api/auth/signout" className="px-4 py-2 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors">
               Logout
             </Link>
@@ -109,19 +158,16 @@ export default function Dashboard() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-[1520px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Dashboard Header */}
         <div className="md:flex md:items-center md:justify-between mb-8">
           <div className="flex-1 min-w-0">
-            <h2 className="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">Dashboard</h2>
-            <p className="mt-1 text-sm text-gray-500">
-              Manage your orders and synchronize between Shopify and your WMS
-            </p>
+            <h2 className="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">Orders</h2>
           </div>
           <div className="mt-4 flex md:mt-0 md:ml-4">
             <button
               type="button"
-              onClick={handleSync}
+              onClick={handleSync} // Keep or modify sync button functionality
               disabled={syncStatus === 'syncing'}
               className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -133,7 +179,7 @@ export default function Dashboard() {
                   </svg>
                   Syncing...
                 </>
-              ) : 'Sync with Shopify'}
+              ) : 'Refresh Orders'}
             </button>
           </div>
         </div>
@@ -148,211 +194,149 @@ export default function Dashboard() {
                 </svg>
               </div>
               <div className="ml-3">
-                <p className="text-sm text-green-700">Successfully synchronized orders with Shopify!</p>
+                <p className="text-sm text-green-700">Successfully refreshed orders from Shopify!</p>
+              </div>
+            </div>
+          </div>
+        )}
+        {syncStatus === 'error' && (
+          <div className="mb-6 bg-red-50 border-l-4 border-red-400 p-4">
+            <div className="flex">
+              <div className="flex-shrink-0">
+                <svg className="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                </svg>
+              </div>
+              <div className="ml-3">
+                <p className="text-sm text-red-700">Failed to refresh orders. Please check console for details.</p>
               </div>
             </div>
           </div>
         )}
 
-        {/* Stats Overview */}
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4 mb-8">
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <div className="flex items-center">
-                <div className="flex-shrink-0 bg-indigo-100 rounded-md p-3">
-                  <svg className="h-6 w-6 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                  </svg>
-                </div>
-                <div className="ml-5 w-0 flex-1">
-                  <dl>
-                    <dt className="text-sm font-medium text-gray-500 truncate">Total Orders</dt>
-                    <dd className="flex items-baseline">
-                      <div className="text-2xl font-semibold text-gray-900">{orders.length}</div>
-                    </dd>
-                  </dl>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <div className="flex items-center">
-                <div className="flex-shrink-0 bg-green-100 rounded-md p-3">
-                  <svg className="h-6 w-6 text-green-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                </div>
-                <div className="ml-5 w-0 flex-1">
-                  <dl>
-                    <dt className="text-sm font-medium text-gray-500 truncate">Completed Orders</dt>
-                    <dd className="flex items-baseline">
-                      <div className="text-2xl font-semibold text-gray-900">
-                        {orders.filter((order: any) => order.status === 'Delivered').length}
-                      </div>
-                    </dd>
-                  </dl>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <div className="flex items-center">
-                <div className="flex-shrink-0 bg-yellow-100 rounded-md p-3">
-                  <svg className="h-6 w-6 text-yellow-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                </div>
-                <div className="ml-5 w-0 flex-1">
-                  <dl>
-                    <dt className="text-sm font-medium text-gray-500 truncate">Pending Orders</dt>
-                    <dd className="flex items-baseline">
-                      <div className="text-2xl font-semibold text-gray-900">
-                        {orders.filter((order: any) => order.status === 'Pending').length}
-                      </div>
-                    </dd>
-                  </dl>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-white overflow-hidden shadow rounded-lg">
-            <div className="px-4 py-5 sm:p-6">
-              <div className="flex items-center">
-                <div className="flex-shrink-0 bg-blue-100 rounded-md p-3">
-                  <svg className="h-6 w-6 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
-                  </svg>
-                </div>
-                <div className="ml-5 w-0 flex-1">
-                  <dl>
-                    <dt className="text-sm font-medium text-gray-500 truncate">Shipped Orders</dt>
-                    <dd className="flex items-baseline">
-                      <div className="text-2xl font-semibold text-gray-900">
-                        {orders.filter((order: any) => order.status === 'Shipped').length}
-                      </div>
-                    </dd>
-                  </dl>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
 
         {/* Orders Table */}
         <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-          <div className="px-4 py-5 border-b border-gray-200 sm:px-6">
-            <h3 className="text-lg leading-6 font-medium text-gray-900">Recent Orders</h3>
-
-            {/* Filter Tabs */}
-            <div className="mt-3 flex space-x-4 border-b border-gray-200">
-              <button
-                className={`pb-3 px-1 ${activeTab === 'all' ? 'border-b-2 border-indigo-500 text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
-                onClick={() => setActiveTab('all')}
-              >
-                All Orders
-              </button>
-              <button
-                className={`pb-3 px-1 ${activeTab === 'pending' ? 'border-b-2 border-indigo-500 text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
-                onClick={() => setActiveTab('pending')}
-              >
-                Pending
-              </button>
-              <button
-                className={`pb-3 px-1 ${activeTab === 'processing' ? 'border-b-2 border-indigo-500 text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
-                onClick={() => setActiveTab('processing')}
-              >
-                Processing
-              </button>
-              <button
-                className={`pb-3 px-1 ${activeTab === 'shipped' ? 'border-b-2 border-indigo-500 text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
-                onClick={() => setActiveTab('shipped')}
-              >
-                Shipped
-              </button>
-              <button
-                className={`pb-3 px-1 ${activeTab === 'delivered' ? 'border-b-2 border-indigo-500 text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
-                onClick={() => setActiveTab('delivered')}
-              >
-                Delivered
-              </button>
+          {/* Filter Tabs */}
+          <div className="border-b border-gray-200">
+            <div className="flex space-x-8 px-6 py-3">
+              {/* Tab buttons */}
+              {['all', 'unfulfilled', 'unpaid', 'open', 'archived'].map((tab) => (
+                <button
+                  key={tab}
+                  className={`pb-3 px-1 capitalize ${activeTab === tab ? 'border-b-2 border-indigo-500 text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}
+                  onClick={() => setActiveTab(tab)}
+                >
+                  {tab}
+                </button>
+              ))}
             </div>
           </div>
+
+          {/* Search and Filter Controls (Optional - keep if needed) */}
+          {/* ... existing search/filter controls ... */}
 
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Order ID
+                  {/* ... existing headers ... */}
+                  <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Order
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Date {/* Use the formatted date */}
+                  </th>
+                  <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Customer
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Date
+                  <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Channel
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Items
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Total
                   </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Actions
+                  <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Payment status
+                  </th>
+                  <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Fulfillment status
+                  </th>
+                  <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Items
+                  </th>
+                  <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Delivery status
+                  </th>
+                  <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Delivery method
+                  </th>
+                  <th scope="col" className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Tags
                   </th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
                 {filteredOrders.length > 0 ? (
-                  filteredOrders.map((order: any) => (
+                  filteredOrders.map((order) => ( // Use the Order interface type
                     <tr key={order.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-indigo-600">
-                        {order.id}
+                      {/* ... existing checkbox cell ... */}
+                      <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-indigo-600">
+                        <Link href={`/orders/${order.id}`}>
+                          {order.orderNumber} {/* Display order number */}
+                        </Link>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
+                        {order.formattedDate} {/* Display formatted date */}
+                      </td>
+                      {/* ... other data cells ... */}
+                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                         {order.customer}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {order.date}
+                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
+                        {order.channel}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                          ${order.status === 'Delivered' ? 'bg-green-100 text-green-800' : ''}
-                          ${order.status === 'Shipped' ? 'bg-blue-100 text-blue-800' : ''}
-                          ${order.status === 'Processing' ? 'bg-yellow-100 text-yellow-800' : ''}
-                          ${order.status === 'Pending' ? 'bg-gray-100 text-gray-800' : ''}
-                        `}>
-                          {order.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {order.items}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                         {order.total}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <Link href={`/orders/${order.id}`} className="text-indigo-600 hover:text-indigo-900 mr-4">
-                          View
-                        </Link>
-                        <button className="text-gray-600 hover:text-gray-900">
-                          Edit
-                        </button>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        <span className={`px-2 w-full flex text-center justify-center items-center py-1 inline-flex text-xs leading-5 font-semibold rounded-full
+                          ${order.paymentStatus.toLowerCase() === 'paid' ? 'bg-green-100 text-green-800' :
+                            order.paymentStatus.toLowerCase() === 'partially_refunded' ? 'bg-blue-100 text-blue-800' :
+                              order.paymentStatus.toLowerCase() === 'refunded' ? 'bg-gray-100 text-gray-800' :
+                                order.paymentStatus.toLowerCase() === 'voided' ? 'bg-gray-100 text-gray-800' :
+                                  'bg-yellow-100 text-yellow-800'}`}>
+                          {order.paymentStatus.replace('_', ' ')}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap">
+                        <span className={`px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full
+                          ${order.fulfillmentStatus?.toLowerCase() === 'fulfilled' ? 'bg-green-100 text-green-800' :
+                            order.fulfillmentStatus?.toLowerCase() === 'partial' ? 'bg-blue-100 text-blue-800' :
+                              order.fulfillmentStatus?.toLowerCase() === 'restocked' ? 'bg-gray-100 text-gray-800' : // Assuming restocked is a status
+                                order.fulfillmentStatus === null ? 'bg-gray-100 text-gray-800' : // Handle null status
+                                  'bg-yellow-100 text-yellow-800'}`}>
+                          {order.fulfillmentStatus === null ? 'Unfulfilled' : order.fulfillmentStatus.replace('_', ' ')}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
+                        {order.items}
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
+                        {order.deliveryStatus}
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
+                        {order.deliveryMethod}
+                      </td>
+                      <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
+                        {order.tags}
                       </td>
                     </tr>
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={7} className="px-6 py-4 text-center text-sm text-gray-500">
-                      No orders found
+                    <td colSpan={12} className="px-4 py-4 text-center text-sm text-gray-500">
+                      No orders found for the selected filter.
                     </td>
                   </tr>
                 )}

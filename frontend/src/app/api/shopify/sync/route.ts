@@ -84,7 +84,7 @@ export async function GET(request: Request) {
 
 // POST handler to sync orders between Shopify and WMS
 export async function POST(request: Request) {
-  const shopName = process.env.SHOPIFY_SHOP_NAME || 'your-shop-name.myshopify.com'; // Replace with dynamic logic
+  const shopName = process.env.SHOPIFY_SHOP_NAME || 'j-wi-co-jp.myshopify.com'; // Replace with dynamic logic
 
   if (!process.env.SHOPIFY_API_KEY || !process.env.SHOPIFY_API_SECRET_KEY || !shopName || !process.env.SHOPIFY_OFFLINE_ACCESS_TOKEN) {
     console.error('Missing Shopify API credentials or shop name in environment variables.');

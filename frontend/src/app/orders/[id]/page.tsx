@@ -43,86 +43,250 @@ const mockOrderDetails = {
   wmsStatus: 'Picking',
 };
 
+// Define a more detailed type for the order state
+interface OrderItem {
+  id: string | number;
+  name: string;
+  sku: string;
+  quantity: number;
+  price: string; // Formatted price with currency
+  total: string; // Formatted total with currency
+  image_url?: string; // Add image URL if available
+  variant_title?: string; // e.g., "XS / S / Black"
+}
+
+interface OrderState {
+  id: string;
+  order_number: string; // Shopify order number like #1001
+  created_at: string;
+  source: string; // e.g., "from Draft Orders"
+  payment_status: string; // e.g., "Payment pending"
+  fulfillment_status: string | null; // e.g., "Unfulfilled"
+  currency: string; // e.g., "JPY"
+  items: OrderItem[];
+  subtotal: string; // Formatted
+  taxes: string; // Formatted
+  shipping_cost: string; // Formatted shipping cost << ADDED
+  total: string; // Formatted
+  paid: string; // Formatted amount paid
+  balance: string; // Formatted balance due
+  delivery_method: string; // e.g., "Shipping"
+  notes: string | null;
+  customer: {
+    id?: number;
+    name: string;
+    email: string | null;
+    phone: string | null;
+  };
+  shipping_address: {
+    address: string | null;
+    city: string | null;
+    state: string | null;
+    zipCode: string | null;
+    country: string | null;
+  };
+  billing_address: { // Add billing address
+    address: string | null;
+    city: string | null;
+    state: string | null;
+    zipCode: string | null;
+    country: string | null;
+  };
+  // Placeholder for data not yet fetched/implemented
+  timeline: any[];
+  conversion_summary: any;
+  order_risk: any;
+  tags: string[];
+  wmsStatus?: string; // Add optional wmsStatus << ADDED
+}
+
+// Initial state structure matching the image more closely
+const initialOrderState: OrderState = {
+  id: '',
+  order_number: '',
+  created_at: '',
+  source: '',
+  payment_status: 'pending',
+  fulfillment_status: null,
+  currency: 'USD', // Default currency, will be updated
+  items: [],
+  subtotal: '¥0',
+  taxes: '¥0',
+  shipping_cost: '¥0', // Initialize shipping cost << ADDED
+  total: '¥0',
+  paid: '¥0',
+  balance: '¥0',
+  delivery_method: 'Shipping', // Assuming default
+  notes: null,
+  customer: { name: '', email: null, phone: null },
+  shipping_address: { address: null, city: null, state: null, zipCode: null, country: null },
+  billing_address: { address: null, city: null, state: null, zipCode: null, country: null },
+  timeline: [],
+  conversion_summary: null,
+  order_risk: null,
+  tags: [],
+  wmsStatus: 'Unknown', // Initialize WMS status << ADDED
+};
+
+
 export default function OrderDetail() {
   const params = useParams();
   const router = useRouter();
-  const [order, setOrder] = useState(mockOrderDetails);
+  // Use the new initial state
+  const [order, setOrder] = useState<OrderState>(initialOrderState);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [newStatus, setNewStatus] = useState('');
-  const [notes, setNotes] = useState(mockOrderDetails.notes);
+  const [selectedStatus, setSelectedStatus] = useState('');
+  // Add state for editable notes
+  const [editableNotes, setEditableNotes] = useState<string | null>(null);
   const [updateMessage, setUpdateMessage] = useState({ type: '', message: '' });
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const fetchOrder = async () => {
+      setIsLoading(true); // Start loading
+      setError(''); // Clear previous errors
       try {
         const response = await axios.get(`/api/shopify/orders/${params!.id}`);
         const shopifyOrder = response.data.order;
+        console.log(shopifyOrder, " : Shopify Order response");
+        
+        if (!shopifyOrder) {
+          throw new Error('Order data not found in API response');
+        }
+
+        console.log(shopifyOrder, " : Shopify Order response");
+
+        // Helper to format currency
+        const formatCurrency = (amount: string | number | undefined | null, currencyCode: string): string => {
+          if (amount === undefined || amount === null) amount = 0;
+          const numberAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
+          const options: Intl.NumberFormatOptions = {
+            style: 'currency',
+            currency: currencyCode,
+          };
+          if (currencyCode === '¥') {
+            options.minimumFractionDigits = 0;
+            options.maximumFractionDigits = 0;
+          } else {
+            options.minimumFractionDigits = 2;
+            options.maximumFractionDigits = 2;
+          }
+          return new Intl.NumberFormat(undefined, options).format(numberAmount);
+        };
+
+        const currencyCode = shopifyOrder.currency || 'USD'; // Get currency code
+
+        // Calculate paid and balance
+        const totalAmount = parseFloat(shopifyOrder.total_price || '0');
+        // Note: Shopify API might not directly provide 'total_paid'.
+        // We infer based on financial_status. This might need refinement.
+        // Determine the primary status field (e.g., financial_status or fulfillment_status)
+        // For this example, let's assume we want to manage 'fulfillment_status'
+        // Or maybe a custom combined status. Let's stick to fulfillment_status for now.
+        const currentFulfillmentStatus = shopifyOrder.fulfillment_status || 'unfulfilled'; // Default if null
+
+        const paidAmount = shopifyOrder.financial_status === 'paid' ? totalAmount : 0;
+        const balanceAmount = totalAmount - paidAmount;
 
         setOrder({
-          id: shopifyOrder.id,
-          customer: {
-            name: `${shopifyOrder.customer?.first_name} ${shopifyOrder.customer?.last_name}`,
-            email: shopifyOrder.email,
-            phone: shopifyOrder.phone || 'N/A',
-          },
-          shipping: {
-            address: shopifyOrder.shipping_address?.address1,
-            city: shopifyOrder.shipping_address?.city,
-            state: shopifyOrder.shipping_address?.province_code,
-            zipCode: shopifyOrder.shipping_address?.zip,
-            country: shopifyOrder.shipping_address?.country_name,
-          },
+          id: shopifyOrder.id.toString(), // Ensure ID is string
+          order_number: `#${shopifyOrder.order_number}`,
+          created_at: shopifyOrder.created_at,
+          // Source might need specific logic or be part of notes/tags
+          source: shopifyOrder.source_name === 'draft_order' ? 'from Draft Orders' : shopifyOrder.source_name || 'Unknown Source',
+          payment_status: shopifyOrder.financial_status, // e.g., pending, paid, refunded
+          fulfillment_status: currentFulfillmentStatus, // Use the determined status
+          currency: currencyCode,
           items: shopifyOrder.line_items.map((item: any) => ({
             id: item.id,
             name: item.title,
-            sku: item.sku,
+            sku: item.sku || 'N/A',
             quantity: item.quantity,
-            price: `$${item.price}`,
-            total: `$${(item.quantity * item.price).toFixed(2)}`
+            // Format price and total with currency
+            price: formatCurrency(item.price, currencyCode),
+            total: formatCurrency(item.quantity * parseFloat(item.price), currencyCode),
+            // Attempt to get variant title (like XS/S/Black)
+            variant_title: item.variant_title,
+            // Placeholder for image - needs separate fetch or different API field
+            image_url: item.image?.src || undefined, // Example: Check if image data exists
           })),
-          payment: {
-            method: shopifyOrder.payment_gateway_names?.[0] || 'N/A',
-            status: shopifyOrder.financial_status,
-            total: `$${shopifyOrder.total_price}`,
-            subtotal: `$${shopifyOrder.subtotal_price}`,
-            shipping: `$${shopifyOrder.total_shipping_price_set?.presentment_money.amount || '0.00'}`,
-            tax: `$${shopifyOrder.total_tax || '0.00'}`
+          // Format totals
+          subtotal: formatCurrency(shopifyOrder.subtotal_price, currencyCode),
+          taxes: formatCurrency(shopifyOrder.total_tax, currencyCode),
+          // Extract and format shipping cost (check API response structure for the correct field)
+          shipping_cost: formatCurrency(shopifyOrder.total_shipping_price_set?.shop_money?.amount, currencyCode), // << MODIFIED/ADDED
+          total: formatCurrency(shopifyOrder.total_price, currencyCode),
+          paid: formatCurrency(paidAmount, currencyCode),
+          balance: formatCurrency(balanceAmount, currencyCode),
+          // Delivery method might be in shipping lines
+          delivery_method: shopifyOrder.shipping_lines?.[0]?.title || 'Shipping',
+          notes: shopifyOrder.note || null,
+          customer: {
+            id: shopifyOrder.customer?.id,
+            name: `${shopifyOrder.customer?.first_name || ''} ${shopifyOrder.customer?.last_name || ''}`.trim() || 'No customer',
+            email: shopifyOrder.customer?.email || shopifyOrder.email || null, // Use order email as fallback
+            phone: shopifyOrder.customer?.phone || shopifyOrder.phone || null, // Use order phone as fallback
           },
-          dates: {
-            created: shopifyOrder.created_at,
-            updated: shopifyOrder.updated_at,
-            shipped: shopifyOrder.fulfillments?.[0]?.created_at,
-            delivered: null
+          shipping_address: {
+            address: shopifyOrder.shipping_address?.address1 || null,
+            city: shopifyOrder.shipping_address?.city || null,
+            state: shopifyOrder.shipping_address?.province_code || null,
+            zipCode: shopifyOrder.shipping_address?.zip || null,
+            country: shopifyOrder.shipping_address?.country || null, // Use 'country' field
           },
-          status: shopifyOrder.fulfillment_status || 'pending',
-          notes: shopifyOrder.note,
-          wmsStatus: shopifyOrder.tags?.includes('wms_processed') ? 'Processed' : 'Pending'
+          // Map billing address
+          billing_address: {
+            address: shopifyOrder.billing_address?.address1 || null,
+            city: shopifyOrder.billing_address?.city || null,
+            state: shopifyOrder.billing_address?.province_code || null,
+            zipCode: shopifyOrder.billing_address?.zip || null,
+            country: shopifyOrder.billing_address?.country || null,
+          },
+          // Initialize placeholders - these need separate implementation
+          timeline: [],
+          conversion_summary: null, // Needs specific data/logic
+          order_risk: null, // Needs specific data/logic (Order Risk API)
+          tags: shopifyOrder.tags ? shopifyOrder.tags.split(',').map((t: string) => t.trim()) : [],
         });
-      } catch (err) {
-        setError('Failed to fetch order details');
+
+        // Initialize selectedStatus and editableNotes
+        setSelectedStatus(currentFulfillmentStatus);
+        setEditableNotes(shopifyOrder.note || ''); // Initialize with fetched notes or empty string
+
+      } catch (err: any) {
+        console.error("Failed to fetch order:", err);
+        setError(`Failed to fetch order details: ${err.message || 'Unknown error'}`);
+        // Optionally set order to initial state or keep previous state
+        // setOrder(initialOrderState);
       } finally {
         setIsLoading(false);
       }
     };
 
-    fetchOrder();
-  }, [params!.id]);
+    if (params?.id) { // Ensure ID exists before fetching
+      fetchOrder();
+    } else {
+      setError('Order ID is missing.');
+      setIsLoading(false);
+    }
+  }, [params?.id]);
 
   const handleStatusUpdate = async () => {
     setIsUpdating(true);
     setUpdateMessage({ type: '', message: '' });
 
     try {
-      // Simulate API call to update order status
-      // In a real app, this would call the API
+      // Simulate API call to update order status using selectedStatus
+      // In a real app, this would call the API with the selectedStatus value
+      console.log("Simulating update to status:", selectedStatus);
       await new Promise(resolve => setTimeout(resolve, 1500));
 
-      // Update local state
-      setOrder(prev => ({ ...prev, status: newStatus }));
+      // Update local state using selectedStatus
+      setOrder(prev => ({ ...prev, fulfillment_status: selectedStatus })); // Update fulfillment_status
       setUpdateMessage({
         type: 'success',
-        message: `Order status updated to ${newStatus}`
+        message: `Order status updated to ${selectedStatus}`
       });
     } catch (error) {
       setUpdateMessage({
@@ -137,15 +301,23 @@ export default function OrderDetail() {
   };
 
   const handleNotesUpdate = async () => {
+    // Check if notes actually changed
+    if (editableNotes === order.notes) {
+      setUpdateMessage({ type: 'info', message: 'Notes have not changed.' });
+      setTimeout(() => setUpdateMessage({ type: '', message: '' }), 3000);
+      return;
+    }
+
     setIsUpdating(true);
     setUpdateMessage({ type: '', message: '' });
 
     try {
-      // Simulate API call to update order notes
+      // Simulate API call to update order notes with the value from editableNotes
+      console.log("Simulating update to notes:", editableNotes);
       await new Promise(resolve => setTimeout(resolve, 1000));
 
-      // Update local state
-      setOrder(prev => ({ ...prev, notes }));
+      // Update local state using the editableNotes value
+      setOrder(prev => ({ ...prev, notes: editableNotes })); // Use editableNotes here
       setUpdateMessage({
         type: 'success',
         message: 'Order notes updated successfully'
@@ -197,9 +369,21 @@ export default function OrderDetail() {
     );
   }
 
+  // Helper function to render status badges (Example)
+  const renderStatusBadge = (text: string, color: 'yellow' | 'green' | 'blue' | 'gray') => {
+    const colorClasses = {
+      yellow: 'bg-yellow-100 text-yellow-800',
+      green: 'bg-green-100 text-green-800',
+      blue: 'bg-blue-100 text-blue-800',
+      gray: 'bg-gray-100 text-gray-800',
+    };
+    return <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${colorClasses[color]}`}>{text}</span>;
+  };
+
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
+    <div className="min-h-screen bg-gray-100">
+      {/* Header remains the same */}
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
           <div className="flex items-center">
@@ -217,259 +401,274 @@ export default function OrderDetail() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Order Header */}
-        <div className="md:flex md:items-center md:justify-between mb-8">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center">
-              <h2 className="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate mr-4">
-                Order {order.id}
+      <main className="max-w-[1520px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Order Header Section (Updated) */}
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center space-x-3">
+              <h2 className="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">
+                {order.order_number}
               </h2>
-              <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full 
-                ${order.status === 'Delivered' ? 'bg-green-100 text-green-800' : ''}
-                ${order.status === 'Shipped' ? 'bg-blue-100 text-blue-800' : ''}
-                ${order.status === 'Processing' ? 'bg-yellow-100 text-yellow-800' : ''}
-                ${order.status === 'Pending' ? 'bg-gray-100 text-gray-800' : ''}
-              `}>
-                {order.status}
-              </span>
+              {/* Payment Status Badge */}
+              {order.payment_status && renderStatusBadge(
+                order.payment_status === 'pending' ? 'Payment pending' : order.payment_status,
+                order.payment_status === 'paid' ? 'green' : 'yellow' // Adjust logic as needed
+              )}
+              {/* Fulfillment Status Badge */}
+              {renderStatusBadge(
+                order.fulfillment_status || 'Unfulfilled',
+                order.fulfillment_status === 'fulfilled' ? 'green' : 'yellow' // Adjust logic
+              )}
             </div>
-            <p className="mt-1 text-sm text-gray-500">
-              Created on {new Date(order.dates.created).toLocaleString()}
-            </p>
+            {/* Action Buttons */}
+            <div className="flex space-x-2">
+              <button className="px-3 py-1 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Restock</button>
+              <button className="px-3 py-1 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Edit</button>
+              {/* Add Print and More Actions Dropdown */}
+            </div>
           </div>
-          <div className="mt-4 flex md:mt-0 md:ml-4 space-x-3">
-            <Link
-              href="/dashboard"
-              className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-            >
-              Back to Dashboard
-            </Link>
-            <button
-              type="button"
-              onClick={syncWithWMS}
-              disabled={isUpdating}
-              className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isUpdating ? 'Syncing...' : 'Sync with WMS'}
-            </button>
-          </div>
+          <p className="text-sm text-gray-500">
+            {new Date(order.created_at).toLocaleString()} {order.source && `from ${order.source}`}
+          </p>
         </div>
 
         {/* Status Update Message */}
-        {updateMessage.message && (
-          <div className={`mb-6 p-4 border-l-4 ${updateMessage.type === 'success' ? 'bg-green-50 border-green-400' : 'bg-red-50 border-red-400'}`}>
-            <div className="flex">
-              <div className="flex-shrink-0">
-                {updateMessage.type === 'success' ? (
-                  <svg className="h-5 w-5 text-green-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                ) : (
-                  <svg className="h-5 w-5 text-red-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                  </svg>
+        {/* ... existing updateMessage rendering ... */}
+
+        {/* Main Grid Layout (Adjusted for 3 columns) */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+          {/* Left Column (Spanning 2 columns on large screens) */}
+          <div className="lg:col-span-2 space-y-6">
+
+            {/* Unfulfilled Items Card */}
+            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+              <div className="px-4 py-4 sm:px-6 border-b border-gray-200">
+                <h3 className="text-base font-semibold leading-6 text-gray-900">
+                  Unfulfilled ({order.items.length}) {/* Total items count since fulfillment status not tracked yet */}
+                </h3>
+              </div>
+              <div className="p-4 sm:p-6 space-y-4">
+                <p className="text-sm text-gray-500">Delivery method: {order.delivery_method}</p>
+                {/* Item List */}
+                {order.items.map((item) => (
+                  <div key={item.id} className="flex items-center space-x-4">
+                    {/* Item Image Placeholder */}
+                    <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center">
+                      {item.image_url ? (
+                        <img src={item.image_url} alt={item.name} className="h-full w-full object-cover rounded" />
+                      ) : (
+                        <svg className="h-6 w-6 text-gray-400" /* Placeholder icon */ >...</svg>
+                      )}
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-indigo-600 hover:underline cursor-pointer">{item.name}</p>
+                      <p className="text-xs text-gray-500">{item.variant_title}</p> {/* Display variant */}
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      {item.price} x {item.quantity}
+                    </div>
+                    <div className="text-sm font-medium text-gray-900">{item.total}</div>
+                  </div>
+                ))}
+                {/* Fulfill Button */}
+                <div className="flex justify-end pt-4">
+                  <button className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
+                    Fulfill items
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Payment Summary Card */}
+            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+              <div className="px-4 py-4 sm:px-6 border-b border-gray-200">
+                {/* Payment Status Badge */}
+                {order.payment_status && renderStatusBadge(
+                  order.payment_status === 'pending' ? 'Payment pending' : order.payment_status,
+                  order.payment_status === 'paid' ? 'green' : 'yellow' // Adjust logic as needed
                 )}
               </div>
-              <div className="ml-3">
-                <p className={`text-sm ${updateMessage.type === 'success' ? 'text-green-700' : 'text-red-700'}`}>
-                  {updateMessage.message}
-                </p>
+              <div className="p-4 sm:p-6 space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Subtotal</span>
+                  <span className="text-gray-900">{order.items.length} items</span>
+                  <span className="text-gray-900">{order.subtotal}</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Taxes</span>
+                  <span className="text-gray-500">CT 10%</span> {/* Adjust tax display */}
+                  <span className="text-gray-900">{order.taxes}</span>
+                </div>
+                 {/* Add Shipping if applicable */}
+                 {parseFloat(order.shipping_cost.replace(/[^0-9.-]+/g,"")) > 0 && (
+                    <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Shipping</span>
+                        <span className="text-gray-900">{order.shipping_cost}</span>
+                    </div>
+                 )}
+                <div className="flex justify-between text-sm font-medium">
+                  <span className="text-gray-900">Total</span>
+                  <span className="text-gray-900">{order.total}</span>
+                </div>
+                <hr className="my-2"/>
+                <div className="flex justify-between text-sm">
+                  <span className="text-gray-500">Paid</span>
+                  <span className="text-gray-900">{order.paid}</span>
+                </div>
+                <div className="flex justify-between text-sm font-medium">
+                  <span className="text-gray-900">Balance</span>
+                  <span className="text-gray-500">Payment due when invoice is sent</span> {/* Adjust text */}
+                  <span className="text-gray-900">{order.balance}</span>
+                </div>
+                {/* Action Buttons */}
+                <div className="flex justify-end space-x-2 pt-4">
+                   <button className="px-3 py-1 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Send invoice</button>
+                   <button className="px-3 py-1 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-800 hover:bg-gray-900">Mark as paid</button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
 
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          {/* Order Information */}
-          <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-            <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
-              <h3 className="text-lg leading-6 font-medium text-gray-900">Order Information</h3>
+            {/* Timeline Card */}
+            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+              <div className="px-4 py-4 sm:px-6 border-b border-gray-200">
+                <h3 className="text-base font-semibold leading-6 text-gray-900">Timeline</h3>
+              </div>
+              <div className="p-4 sm:p-6">
+                {/* Comment Input */}
+                <div className="flex items-start space-x-3">
+                   <div className="flex-shrink-0 w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-sm font-medium text-gray-600">IM</div> {/* Placeholder Initials */}
+                   <div className="min-w-0 flex-1">
+                     <textarea
+                       rows={3}
+                       className="block w-full border border-gray-300 rounded-md shadow-sm sm:text-sm p-2 focus:ring-indigo-500 focus:border-indigo-500"
+                       placeholder="Leave a comment..."
+                       value={editableNotes || ''} // Use editableNotes state
+                       onChange={(e) => setEditableNotes(e.target.value)}
+                     />
+                     <div className="mt-2 flex justify-between items-center">
+                        {/* Add formatting buttons if needed */}
+                        <div></div>
+                        <button
+                          onClick={handleNotesUpdate} // Reuse or adapt notes update logic
+                          disabled={isUpdating}
+                          className="px-3 py-1 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                        >
+                          {isUpdating ? 'Posting...' : 'Post'}
+                        </button>
+                     </div>
+                   </div>
+                </div>
+                {/* Display existing comments/timeline events here */}
+                <p className="mt-4 text-center text-xs text-gray-500">Only you and other staff can see comments</p>
+              </div>
             </div>
-            <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
-              <dl className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
-                <div className="sm:col-span-1">
-                  <dt className="text-sm font-medium text-gray-500">Order Status</dt>
-                  <dd className="mt-1 text-sm text-gray-900">
-                    <div className="flex items-center space-x-2">
-                      <select
-                        value={newStatus}
-                        onChange={(e) => setNewStatus(e.target.value)}
-                        className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm rounded-md"
-                      >
-                        <option value="Pending">Pending</option>
-                        <option value="Processing">Processing</option>
-                        <option value="Shipped">Shipped</option>
-                        <option value="Delivered">Delivered</option>
-                        <option value="Cancelled">Cancelled</option>
-                      </select>
-                      <button
-                        type="button"
-                        onClick={handleStatusUpdate}
-                        disabled={isUpdating || newStatus === order.status}
-                        className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Update
-                      </button>
-                    </div>
-                  </dd>
-                </div>
-                <div className="sm:col-span-1">
-                  <dt className="text-sm font-medium text-gray-500">WMS Status</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{order.wmsStatus}</dd>
-                </div>
-                <div className="sm:col-span-1">
-                  <dt className="text-sm font-medium text-gray-500">Payment Status</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{order.payment.status}</dd>
-                </div>
-                <div className="sm:col-span-1">
-                  <dt className="text-sm font-medium text-gray-500">Payment Method</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{order.payment.method}</dd>
-                </div>
-                <div className="sm:col-span-1">
-                  <dt className="text-sm font-medium text-gray-500">Order Date</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{new Date(order.dates.created).toLocaleString()}</dd>
-                </div>
-                <div className="sm:col-span-1">
-                  <dt className="text-sm font-medium text-gray-500">Last Updated</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{new Date(order.dates.updated).toLocaleString()}</dd>
-                </div>
-              </dl>
-            </div>
-          </div>
 
-          {/* Customer Information */}
-          <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-            <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
-              <h3 className="text-lg leading-6 font-medium text-gray-900">Customer Information</h3>
-            </div>
-            <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
-              <dl className="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2">
-                <div className="sm:col-span-2">
-                  <dt className="text-sm font-medium text-gray-500">Customer Name</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{order.customer.name}</dd>
-                </div>
-                <div className="sm:col-span-1">
-                  <dt className="text-sm font-medium text-gray-500">Email</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{order.customer.email}</dd>
-                </div>
-                <div className="sm:col-span-1">
-                  <dt className="text-sm font-medium text-gray-500">Phone</dt>
-                  <dd className="mt-1 text-sm text-gray-900">{order.customer.phone}</dd>
-                </div>
-                <div className="sm:col-span-2">
-                  <dt className="text-sm font-medium text-gray-500">Shipping Address</dt>
-                  <dd className="mt-1 text-sm text-gray-900">
-                    {order.shipping.address}<br />
-                    {order.shipping.city}, {order.shipping.state} {order.shipping.zipCode}<br />
-                    {order.shipping.country}
-                  </dd>
-                </div>
-              </dl>
-            </div>
-          </div>
-        </div>
+          </div> {/* End Left Column */}
 
-        {/* Order Items */}
-        <div className="mt-6 bg-white shadow overflow-hidden sm:rounded-lg">
-          <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
-            <h3 className="text-lg leading-6 font-medium text-gray-900">Order Items</h3>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Product
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    SKU
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Quantity
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Price
-                  </th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Total
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {order.items.map((item) => (
-                  <tr key={item.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                      {item.name}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {item.sku}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {item.quantity}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {item.price}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                      {item.total}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot className="bg-gray-50">
-                <tr>
-                  <td colSpan={3} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"></td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Subtotal</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{order.payment.subtotal}</td>
-                </tr>
-                <tr>
-                  <td colSpan={3} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"></td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Shipping</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{order.payment.shipping}</td>
-                </tr>
-                <tr>
-                  <td colSpan={3} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"></td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">Tax</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{order.payment.tax}</td>
-                </tr>
-                <tr>
-                  <td colSpan={3} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"></td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">Total</td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900">{order.payment.total}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
+          {/* Right Column (Sidebar) */}
+          <div className="lg:col-span-1 space-y-6">
 
-        {/* Order Notes */}
-        <div className="mt-6 bg-white shadow overflow-hidden sm:rounded-lg">
-          <div className="px-4 py-5 sm:px-6 border-b border-gray-200">
-            <h3 className="text-lg leading-6 font-medium text-gray-900">Order Notes</h3>
-          </div>
-          <div className="border-t border-gray-200 px-4 py-5 sm:p-6">
-            <div className="mt-1">
-              <textarea
-                rows={4}
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="shadow-sm text-[#000] focus:ring-indigo-500 block w-full sm:text-sm border border-[#000] p-5 rounded-md outline-none"
-                placeholder="Add notes about this order..."
-              />
+            {/* Notes Card */}
+            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+              <div className="px-4 py-3 sm:px-6 border-b border-gray-200 flex justify-between items-center">
+                <h3 className="text-base font-semibold leading-6 text-gray-900">Notes</h3>
+                <button className="text-indigo-600 hover:text-indigo-900 text-sm font-medium">Edit</button> {/* Add edit functionality */}
+              </div>
+              <div className="p-4 sm:p-6 text-sm text-gray-500">
+                {order.notes ? order.notes : "No notes from customer"}
+              </div>
             </div>
-            <div className="mt-3 text-right">
-              <button
-                type="button"
-                onClick={handleNotesUpdate}
-                disabled={isUpdating}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Save Notes
-              </button>
+
+            {/* Customer Card */}
+            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+              <div className="px-4 py-3 sm:px-6 border-b border-gray-200 flex justify-between items-center">
+                <h3 className="text-base font-semibold leading-6 text-gray-900">Customer</h3>
+                <button className="text-indigo-600 hover:text-indigo-900 text-sm font-medium">Edit</button> {/* Add edit functionality */}
+              </div>
+              <div className="p-4 sm:p-6 space-y-4">
+                {/* Search/Create Input */}
+                <input type="text" placeholder="Search or create a customer" className="block w-full border border-gray-300 rounded-md shadow-sm sm:text-sm p-2"/>
+                {/* Customer Name Link */}
+                {order.customer.name !== 'No customer' && (
+                  <a href="#" className="text-sm font-medium text-indigo-600 hover:underline block">{order.customer.name}</a>
+                )}
+                {/* Contact Info */}
+                <div className="border-t pt-4 mt-4">
+                  <h4 className="text-sm font-medium text-gray-900 mb-1">Contact information</h4>
+                  <p className="text-sm text-gray-500">{order.customer.email || 'No email provided'}</p>
+                  <p className="text-sm text-gray-500">{order.customer.phone || 'No phone number'}</p>
+                </div>
+                {/* Shipping Address */}
+                <div className="border-t pt-4 mt-4">
+                  <h4 className="text-sm font-medium text-gray-900 mb-1">Shipping address</h4>
+                  {order.shipping_address.address ? (
+                    <address className="text-sm text-gray-500 not-italic">
+                      {order.shipping_address.address}<br />
+                      {order.shipping_address.city}, {order.shipping_address.state} {order.shipping_address.zipCode}<br />
+                      {order.shipping_address.country}
+                    </address>
+                  ) : (
+                    <p className="text-sm text-gray-500">No shipping address provided</p>
+                  )}
+                </div>
+                {/* Billing Address */}
+                <div className="border-t pt-4 mt-4">
+                  <h4 className="text-sm font-medium text-gray-900 mb-1">Billing address</h4>
+                  {order.billing_address.address ? (
+                     <address className="text-sm text-gray-500 not-italic">
+                      {order.billing_address.address}<br />
+                      {order.billing_address.city}, {order.billing_address.state} {order.billing_address.zipCode}<br />
+                      {order.billing_address.country}
+                    </address>
+                  ) : (
+                    <p className="text-sm text-gray-500">No billing address provided</p>
+                  )}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+
+            {/* Conversion Summary Card */}
+            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+              <div className="px-4 py-3 sm:px-6 border-b border-gray-200">
+                <h3 className="text-base font-semibold leading-6 text-gray-900">Conversion summary</h3>
+              </div>
+              <div className="p-4 sm:p-6 text-sm text-gray-500">
+                There aren't any conversion details available for this order.
+                <a href="#" className="text-indigo-600 hover:underline ml-1">Learn more</a>
+              </div>
+            </div>
+
+            {/* Order Risk Card */}
+             <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+              <div className="px-4 py-3 sm:px-6 border-b border-gray-200 flex justify-between items-center">
+                <h3 className="text-base font-semibold leading-6 text-gray-900">Order risk</h3>
+                 {/* Add Risk Icon/Link if available */}
+              </div>
+              <div className="p-4 sm:p-6 text-sm text-gray-500">
+                Analysis not available
+              </div>
+            </div>
+
+            {/* Tags Card */}
+            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+              <div className="px-4 py-3 sm:px-6 border-b border-gray-200">
+                <h3 className="text-base font-semibold leading-6 text-gray-900">Tags</h3>
+              </div>
+              <div className="p-4 sm:p-6">
+                <input type="text" placeholder="Find or create tags" className="block w-full border border-gray-300 rounded-md shadow-sm sm:text-sm p-2"/>
+                {/* Display existing tags */}
+                <div className="mt-2 flex flex-wrap gap-1">
+                  {order.tags.map(tag => (
+                    <span key={tag} className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">{tag} <button className="ml-1 text-gray-400 hover:text-gray-600">&times;</button></span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+          </div> {/* End Right Column */}
+
+        </div> {/* End Main Grid */}
       </main>
     </div>
   );

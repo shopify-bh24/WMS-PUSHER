@@ -24,7 +24,7 @@ async function verifyShopifyWebhook(request: Request): Promise<boolean> {
     const untrusted = Buffer.from(hmacHeader, 'base64');
 
     if (trusted.length !== untrusted.length) {
-        return false;
+      return false;
     }
 
     return crypto.timingSafeEqual(trusted, untrusted);
