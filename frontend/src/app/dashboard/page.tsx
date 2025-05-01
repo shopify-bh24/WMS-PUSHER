@@ -38,13 +38,14 @@ export default function Dashboard() {
     }
   }, [status, router]);
 
-  // Function to fetch orders
+  // Function to fetch orders (this now implicitly triggers backend sync via the API route)
   const fetchOrders = async () => {
     setIsLoading(true); // Set loading true when fetching starts
+    let success = false; // Track success for handleSync
     try {
-      // Fetch from the new endpoint
+      // Fetch from the API endpoint that handles both fetching and backend sync
       const response = await axios.get('/api/shopify/orders');
-      console.log(response.data, " : orders from /api/shopify/orders");
+      console.log(response.data.orders[0].line_items[0], " : orders from /api/shopify/orders");
 
       if (response.data.success && Array.isArray(response.data.orders)) {
         setOrders(response.data.orders.map((order: any): Order => ({ // Map to the Order interface
@@ -54,24 +55,27 @@ export default function Dashboard() {
           date: order.created_at, // Store original date
           formattedDate: order.created_at ? format(new Date(order.created_at), 'MMM d, h:mm a') : 'N/A',
           channel: order.source_name || 'Online Store',
-          total: order.currency ? `${order.currency} ${order.total_price}` : `$${order.total_price}`,
+          total: order.currency ? `¥${order.total_price}` : `$${order.total_price}`,
           paymentStatus: order.financial_status || 'Pending',
           fulfillmentStatus: order.fulfillment_status || 'Unfulfilled',
           items: `${order.line_items?.length || 0} items`,
-          deliveryStatus: order.fulfillment_status === 'fulfilled' ? 'Shipped' : 'Pending',
+          deliveryStatus: order.fulfillment_status === 'fulfilled' ? 'Shipped' : '',
           deliveryMethod: order.shipping_lines?.[0]?.title || 'Shipping',
           tags: order.tags || ''
         })));
+        success = true; // Mark as successful
       } else {
-        console.error('Error fetching orders: API response unsuccessful or invalid format');
+        console.error('Error fetching orders: API response unsuccessful or invalid format', response.data?.error);
         setOrders([]); // Set to empty array on error
       }
-    } catch (error) {
-      console.error('Error fetching orders:', error);
+    } catch (error: any) {
+      console.error('Error fetching orders:', error.response?.data || error.message);
       setOrders([]); // Set to empty array on error
     } finally {
       setIsLoading(false);
     }
+    // Return success status so handleSync knows if it worked
+    return success;
   };
 
   useEffect(() => {
@@ -83,19 +87,16 @@ export default function Dashboard() {
   // Keep handleSync as is, or update it if needed for other actions
   const handleSync = async () => {
     setSyncStatus('syncing');
-    try {
-      // Example: Trigger a full sync via a different endpoint or action if needed
-      // await axios.post('/api/shopify/sync', { action: 'sync_all' });
+    const fetchSuccess = await fetchOrders(); // Call fetchOrders and get its success status
 
-      // Re-fetch orders after sync action
-      await fetchOrders();
-      setSyncStatus('success');
-    } catch (error) {
-      console.error('Sync failed:', error);
-      setSyncStatus('error');
-    } finally {
-      setTimeout(() => setSyncStatus('idle'), 3000);
+    if (fetchSuccess) {
+      setSyncStatus('success'); // Set success if fetchOrders reported success
+    } else {
+      setSyncStatus('error'); // Set error if fetchOrders reported failure
     }
+
+    // Reset status after a delay
+    setTimeout(() => setSyncStatus('idle'), 3000);
   };
 
   // Filter orders based on active tab
@@ -167,7 +168,7 @@ export default function Dashboard() {
           <div className="mt-4 flex md:mt-0 md:ml-4">
             <button
               type="button"
-              onClick={handleSync} // Keep or modify sync button functionality
+              onClick={handleSync} // This correctly calls the function above
               disabled={syncStatus === 'syncing'}
               className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >

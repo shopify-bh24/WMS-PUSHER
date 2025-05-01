@@ -5,44 +5,6 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import axios from 'axios';
 
-// Mock order data for demonstration
-const mockOrderDetails = {
-  id: 'SHO12345',
-  customer: {
-    name: 'John Doe',
-    email: 'john.doe@example.com',
-    phone: '+1 (555) 123-4567',
-  },
-  shipping: {
-    address: '123 Main St',
-    city: 'New York',
-    state: 'NY',
-    zipCode: '10001',
-    country: 'United States',
-  },
-  items: [
-    { id: 1, name: 'T-Shirt (Blue, Large)', sku: 'PROD-001-BL-L', quantity: 2, price: '$29.99', total: '$59.98' },
-    { id: 2, name: 'Jeans (Black, 32x32)', sku: 'PROD-002-BK-32', quantity: 1, price: '$69.99', total: '$69.99' },
-  ],
-  payment: {
-    method: 'Credit Card',
-    status: 'Paid',
-    total: '$129.97',
-    subtotal: '$129.97',
-    shipping: '$0.00',
-    tax: '$0.00',
-  },
-  dates: {
-    created: '2025-04-15T14:30:00Z',
-    updated: '2025-04-15T15:45:00Z',
-    shipped: null,
-    delivered: null,
-  },
-  status: 'Processing',
-  notes: '',
-  wmsStatus: 'Picking',
-};
-
 // Define a more detailed type for the order state
 interface OrderItem {
   id: string | number;
@@ -150,7 +112,7 @@ export default function OrderDetail() {
         const response = await axios.get(`/api/shopify/orders/${params!.id}`);
         const shopifyOrder = response.data.order;
         console.log(shopifyOrder, " : Shopify Order response");
-        
+
         if (!shopifyOrder) {
           throw new Error('Order data not found in API response');
         }
@@ -194,7 +156,7 @@ export default function OrderDetail() {
           order_number: `#${shopifyOrder.order_number}`,
           created_at: shopifyOrder.created_at,
           // Source might need specific logic or be part of notes/tags
-          source: shopifyOrder.source_name === 'draft_order' ? 'from Draft Orders' : shopifyOrder.source_name || 'Unknown Source',
+          source: shopifyOrder.source_name === 'draft_order' ? 'from Draft Orders' : 'from Draft Orders',
           payment_status: shopifyOrder.financial_status, // e.g., pending, paid, refunded
           fulfillment_status: currentFulfillmentStatus, // Use the determined status
           currency: currencyCode,
@@ -277,31 +239,39 @@ export default function OrderDetail() {
     setUpdateMessage({ type: '', message: '' });
 
     try {
-      // Simulate API call to update order status using selectedStatus
-      // In a real app, this would call the API with the selectedStatus value
-      console.log("Simulating update to status:", selectedStatus);
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // First update Shopify via API
+      const shopifyResponse = await axios.post(`/api/shopify/sync`, {
+        orderId: params!.id,
+        action: 'update_status',
+        status: selectedStatus
+      });
 
-      // Update local state using selectedStatus
-      setOrder(prev => ({ ...prev, fulfillment_status: selectedStatus })); // Update fulfillment_status
+      // Then update the database
+      const dbResponse = await axios.put(`/api/orders/${params!.id}`, {
+        fulfillment_status: selectedStatus,
+        shopify_order_id: params!.id
+      });
+
+      // Update local state
+      setOrder(prev => ({ ...prev, fulfillment_status: selectedStatus }));
+
       setUpdateMessage({
         type: 'success',
         message: `Order status updated to ${selectedStatus}`
       });
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Failed to update status:', error);
       setUpdateMessage({
         type: 'error',
-        message: 'Failed to update order status'
+        message: error.response?.data?.message || 'Failed to update order status'
       });
     } finally {
       setIsUpdating(false);
-      // Clear message after 3 seconds
       setTimeout(() => setUpdateMessage({ type: '', message: '' }), 3000);
     }
   };
 
   const handleNotesUpdate = async () => {
-    // Check if notes actually changed
     if (editableNotes === order.notes) {
       setUpdateMessage({ type: 'info', message: 'Notes have not changed.' });
       setTimeout(() => setUpdateMessage({ type: '', message: '' }), 3000);
@@ -312,24 +282,34 @@ export default function OrderDetail() {
     setUpdateMessage({ type: '', message: '' });
 
     try {
-      // Simulate API call to update order notes with the value from editableNotes
-      console.log("Simulating update to notes:", editableNotes);
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Update Shopify via API
+      const shopifyResponse = await axios.post(`/api/shopify/sync`, {
+        orderId: params!.id,
+        action: 'update_notes',
+        notes: editableNotes
+      });
 
-      // Update local state using the editableNotes value
-      setOrder(prev => ({ ...prev, notes: editableNotes })); // Use editableNotes here
+      // Update database
+      const dbResponse = await axios.put(`/api/orders/${params!.id}`, {
+        notes: editableNotes,
+        shopify_order_id: params!.id
+      });
+
+      // Update local state
+      setOrder(prev => ({ ...prev, notes: editableNotes }));
+
       setUpdateMessage({
         type: 'success',
         message: 'Order notes updated successfully'
       });
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Failed to update notes:', error);
       setUpdateMessage({
         type: 'error',
-        message: 'Failed to update order notes'
+        message: error.response?.data?.message || 'Failed to update order notes'
       });
     } finally {
       setIsUpdating(false);
-      // Clear message after 3 seconds
       setTimeout(() => setUpdateMessage({ type: '', message: '' }), 3000);
     }
   };
@@ -500,18 +480,18 @@ export default function OrderDetail() {
                   <span className="text-gray-500">CT 10%</span> {/* Adjust tax display */}
                   <span className="text-gray-900">{order.taxes}</span>
                 </div>
-                 {/* Add Shipping if applicable */}
-                 {parseFloat(order.shipping_cost.replace(/[^0-9.-]+/g,"")) > 0 && (
-                    <div className="flex justify-between text-sm">
-                        <span className="text-gray-500">Shipping</span>
-                        <span className="text-gray-900">{order.shipping_cost}</span>
-                    </div>
-                 )}
+                {/* Add Shipping if applicable */}
+                {parseFloat(order.shipping_cost.replace(/[^0-9.-]+/g, "")) > 0 && (
+                  <div className="flex justify-between text-sm">
+                    <span className="text-gray-500">Shipping</span>
+                    <span className="text-gray-900">{order.shipping_cost}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-sm font-medium">
                   <span className="text-gray-900">Total</span>
                   <span className="text-gray-900">{order.total}</span>
                 </div>
-                <hr className="my-2"/>
+                <hr className="my-2" />
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Paid</span>
                   <span className="text-gray-900">{order.paid}</span>
@@ -523,8 +503,8 @@ export default function OrderDetail() {
                 </div>
                 {/* Action Buttons */}
                 <div className="flex justify-end space-x-2 pt-4">
-                   <button className="px-3 py-1 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Send invoice</button>
-                   <button className="px-3 py-1 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-800 hover:bg-gray-900">Mark as paid</button>
+                  <button className="px-3 py-1 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Send invoice</button>
+                  <button className="px-3 py-1 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-800 hover:bg-gray-900">Mark as paid</button>
                 </div>
               </div>
             </div>
@@ -537,27 +517,27 @@ export default function OrderDetail() {
               <div className="p-4 sm:p-6">
                 {/* Comment Input */}
                 <div className="flex items-start space-x-3">
-                   <div className="flex-shrink-0 w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-sm font-medium text-gray-600">IM</div> {/* Placeholder Initials */}
-                   <div className="min-w-0 flex-1">
-                     <textarea
-                       rows={3}
-                       className="block w-full border border-gray-300 rounded-md shadow-sm sm:text-sm p-2 focus:ring-indigo-500 focus:border-indigo-500"
-                       placeholder="Leave a comment..."
-                       value={editableNotes || ''} // Use editableNotes state
-                       onChange={(e) => setEditableNotes(e.target.value)}
-                     />
-                     <div className="mt-2 flex justify-between items-center">
-                        {/* Add formatting buttons if needed */}
-                        <div></div>
-                        <button
-                          onClick={handleNotesUpdate} // Reuse or adapt notes update logic
-                          disabled={isUpdating}
-                          className="px-3 py-1 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-                        >
-                          {isUpdating ? 'Posting...' : 'Post'}
-                        </button>
-                     </div>
-                   </div>
+                  <div className="flex-shrink-0 w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-sm font-medium text-gray-600">IM</div> {/* Placeholder Initials */}
+                  <div className="min-w-0 flex-1">
+                    <textarea
+                      rows={3}
+                      className="block w-full border border-gray-300 rounded-md shadow-sm sm:text-sm p-2 focus:ring-indigo-500 focus:border-indigo-500"
+                      placeholder="Leave a comment..."
+                      value={editableNotes || ''} // Use editableNotes state
+                      onChange={(e) => setEditableNotes(e.target.value)}
+                    />
+                    <div className="mt-2 flex justify-between items-center">
+                      {/* Add formatting buttons if needed */}
+                      <div></div>
+                      <button
+                        onClick={handleNotesUpdate} // Reuse or adapt notes update logic
+                        disabled={isUpdating}
+                        className="px-3 py-1 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {isUpdating ? 'Posting...' : 'Post'}
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 {/* Display existing comments/timeline events here */}
                 <p className="mt-4 text-center text-xs text-gray-500">Only you and other staff can see comments</p>
@@ -588,7 +568,7 @@ export default function OrderDetail() {
               </div>
               <div className="p-4 sm:p-6 space-y-4">
                 {/* Search/Create Input */}
-                <input type="text" placeholder="Search or create a customer" className="block w-full border border-gray-300 rounded-md shadow-sm sm:text-sm p-2"/>
+                <input type="text" placeholder="Search or create a customer" className="block w-full border border-gray-300 rounded-md shadow-sm sm:text-sm p-2" />
                 {/* Customer Name Link */}
                 {order.customer.name !== 'No customer' && (
                   <a href="#" className="text-sm font-medium text-indigo-600 hover:underline block">{order.customer.name}</a>
@@ -616,7 +596,7 @@ export default function OrderDetail() {
                 <div className="border-t pt-4 mt-4">
                   <h4 className="text-sm font-medium text-gray-900 mb-1">Billing address</h4>
                   {order.billing_address.address ? (
-                     <address className="text-sm text-gray-500 not-italic">
+                    <address className="text-sm text-gray-500 not-italic">
                       {order.billing_address.address}<br />
                       {order.billing_address.city}, {order.billing_address.state} {order.billing_address.zipCode}<br />
                       {order.billing_address.country}
@@ -640,10 +620,10 @@ export default function OrderDetail() {
             </div>
 
             {/* Order Risk Card */}
-             <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
               <div className="px-4 py-3 sm:px-6 border-b border-gray-200 flex justify-between items-center">
                 <h3 className="text-base font-semibold leading-6 text-gray-900">Order risk</h3>
-                 {/* Add Risk Icon/Link if available */}
+                {/* Add Risk Icon/Link if available */}
               </div>
               <div className="p-4 sm:p-6 text-sm text-gray-500">
                 Analysis not available
@@ -656,7 +636,7 @@ export default function OrderDetail() {
                 <h3 className="text-base font-semibold leading-6 text-gray-900">Tags</h3>
               </div>
               <div className="p-4 sm:p-6">
-                <input type="text" placeholder="Find or create tags" className="block w-full border border-gray-300 rounded-md shadow-sm sm:text-sm p-2"/>
+                <input type="text" placeholder="Find or create tags" className="block w-full border border-gray-300 rounded-md shadow-sm sm:text-sm p-2" />
                 {/* Display existing tags */}
                 <div className="mt-2 flex flex-wrap gap-1">
                   {order.tags.map(tag => (
