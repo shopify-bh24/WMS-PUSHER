@@ -3,15 +3,13 @@ import { getShopifyRestClient } from '@/lib/shopify'; // Adjust path if needed
 import axios from 'axios';
 import { LATEST_API_VERSION } from '@shopify/shopify-api'; // Import API version constant
 
-// Define your backend API URL (replace with your actual backend URL)
 const BACKEND_API_URL = process.env.BACKEND_API_URL || 'http://localhost:5000'; // Ensure this matches your backend port
 
-// Helper function to parse the Link header for the next page URL
 const getNextPageInfo = (linkHeader: string | undefined | null): string | null => {
     if (!linkHeader) {
         return null;
     }
-    // Example Link header: <https://.../orders.json?limit=50&page_info=...>; rel="next"
+
     const links = linkHeader.split(',');
     const nextLink = links.find(link => link.includes('rel="next"'));
     if (!nextLink) {
@@ -40,7 +38,7 @@ export async function GET(request: Request) {
         do {
             const query: { [key: string]: any } = {
                 status: 'any',
-                limit: 250, // Fetch max allowed per page
+                limit: 250,
                 fields: 'id,order_number,name,created_at,processed_at,updated_at,customer,line_items,financial_status,fulfillment_status,total_price,currency,source_name,shipping_lines,tags,shipping_address,billing_address,note', // Added more fields based on schema
             };
 
@@ -55,31 +53,24 @@ export async function GET(request: Request) {
                 query: query,
             });
 
-            // Type assertion for the response body and headers
             const responseBody = response.body as { orders: any[] };
             const fetchedOrders = responseBody?.orders || [];
             allOrders = allOrders.concat(fetchedOrders);
 
             console.log(`Fetched ${fetchedOrders.length} orders. Total fetched: ${allOrders.length}`);
 
-            // Get next page info from Link header - Safely handle different header types
             let linkHeaderValue: string | undefined | null = null;
             if (typeof response.headers?.get === 'function') {
-                // Standard Headers interface approach
                 linkHeaderValue = response.headers.get('Link');
             } else if (response.headers?.['Link']) {
-                // Fallback for plain object headers, handle potential array
                 const header = response.headers['Link'];
-                linkHeaderValue = Array.isArray(header) ? header[0] : header; // Use first value if array
+                linkHeaderValue = Array.isArray(header) ? header[0] : header;
             }
 
-            nextPageInfo = getNextPageInfo(linkHeaderValue); // Pass the extracted value
+            nextPageInfo = getNextPageInfo(linkHeaderValue);
             console.log(`Next page_info: ${nextPageInfo}`);
 
-            // Optional: Add a small delay to avoid hitting rate limits aggressively
-            // await new Promise(resolve => setTimeout(resolve, 250)); // 250ms delay
-
-        } while (nextPageInfo); // Continue while there's a next page
+        } while (nextPageInfo);
 
         console.log(`Finished fetching all orders. Total: ${allOrders.length}`);
 

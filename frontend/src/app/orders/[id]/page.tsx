@@ -36,9 +36,28 @@ interface OrderState {
   notes: string | null;
   customer: {
     id?: number;
-    name: string;
-    email: string | null;
+    admin_graphql_api_id: string;
+    created_at: string;
+    currency: string;
+    email: string;
+    email_marketing_consent: {
+      consent_updated_at: string | null;
+      opt_in_level: string;
+      state: string;
+    };
+    first_name: string | null;
+    last_name: string | null;
+    multipass_identifier: string | null;
+    note: string | null;
     phone: string | null;
+    sms_marketing_consent: {
+      state: string;
+    };
+    tags: string;
+    tax_exempt: boolean;
+    tax_exemptions: string[];
+    updated_at: string;
+    verified_email: boolean;
   };
   shipping_address: {
     address: string | null;
@@ -62,6 +81,26 @@ interface OrderState {
   wmsStatus?: string; // Add optional wmsStatus << ADDED
 }
 
+interface EditableCustomer {
+  name: string;
+  email: string;
+  phone: string;
+  shipping_address: {
+    address: string;
+    city: string;
+    state: string;
+    zipCode: string;
+    country: string;
+  };
+  billing_address: {
+    address: string;
+    city: string;
+    state: string;
+    zipCode: string;
+    country: string;
+  };
+}
+
 // Initial state structure matching the image more closely
 const initialOrderState: OrderState = {
   id: '',
@@ -80,7 +119,31 @@ const initialOrderState: OrderState = {
   balance: '¥0',
   delivery_method: 'Shipping', // Assuming default
   notes: null,
-  customer: { name: '', email: null, phone: null },
+  customer: {
+    id: undefined,
+    admin_graphql_api_id: '',
+    created_at: new Date().toISOString(),
+    currency: 'USD',
+    email: '',
+    email_marketing_consent: {
+      consent_updated_at: null,
+      opt_in_level: 'single_opt_in',
+      state: 'not_subscribed'
+    },
+    first_name: null,
+    last_name: null,
+    multipass_identifier: null,
+    note: null,
+    phone: null,
+    sms_marketing_consent: {
+      state: 'not_subscribed'
+    },
+    tags: '',
+    tax_exempt: false,
+    tax_exemptions: [],
+    updated_at: new Date().toISOString(),
+    verified_email: false
+  },
   shipping_address: { address: null, city: null, state: null, zipCode: null, country: null },
   billing_address: { address: null, city: null, state: null, zipCode: null, country: null },
   timeline: [],
@@ -94,20 +157,42 @@ const initialOrderState: OrderState = {
 export default function OrderDetail() {
   const params = useParams();
   const router = useRouter();
-  // Use the new initial state
+
   const [order, setOrder] = useState<OrderState>(initialOrderState);
   const [isLoading, setIsLoading] = useState(true);
   const [isUpdating, setIsUpdating] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState('');
-  // Add state for editable notes
+
   const [editableNotes, setEditableNotes] = useState<string | null>(null);
   const [updateMessage, setUpdateMessage] = useState({ type: '', message: '' });
   const [error, setError] = useState('');
 
+  const [editableCustomer, setEditableCustomer] = useState<EditableCustomer>({
+    name: '',
+    email: '',
+    phone: '',
+    shipping_address: {
+      address: '',
+      city: '',
+      state: '',
+      zipCode: '',
+      country: ''
+    },
+    billing_address: {
+      address: '',
+      city: '',
+      state: '',
+      zipCode: '',
+      country: ''
+    }
+  });
+
+  const [isEditingNotes, setIsEditingNotes] = useState(false);
+
   useEffect(() => {
     const fetchOrder = async () => {
-      setIsLoading(true); // Start loading
-      setError(''); // Clear previous errors
+      setIsLoading(true);
+      setError('');
       try {
         const response = await axios.get(`/api/shopify/orders/${params!.id}`);
         const shopifyOrder = response.data.order;
@@ -119,7 +204,6 @@ export default function OrderDetail() {
 
         console.log(shopifyOrder, " : Shopify Order response");
 
-        // Helper to format currency
         const formatCurrency = (amount: string | number | undefined | null, currencyCode: string): string => {
           if (amount === undefined || amount === null) amount = 0;
           const numberAmount = typeof amount === 'string' ? parseFloat(amount) : amount;
@@ -137,43 +221,33 @@ export default function OrderDetail() {
           return new Intl.NumberFormat(undefined, options).format(numberAmount);
         };
 
-        const currencyCode = shopifyOrder.currency || 'USD'; // Get currency code
+        const currencyCode = shopifyOrder.currency || 'USD';
 
-        // Calculate paid and balance
         const totalAmount = parseFloat(shopifyOrder.total_price || '0');
-        // Note: Shopify API might not directly provide 'total_paid'.
-        // We infer based on financial_status. This might need refinement.
-        // Determine the primary status field (e.g., financial_status or fulfillment_status)
-        // For this example, let's assume we want to manage 'fulfillment_status'
-        // Or maybe a custom combined status. Let's stick to fulfillment_status for now.
-        const currentFulfillmentStatus = shopifyOrder.fulfillment_status || 'unfulfilled'; // Default if null
+
+        const currentFulfillmentStatus = shopifyOrder.fulfillment_status || 'unfulfilled';
 
         const paidAmount = shopifyOrder.financial_status === 'paid' ? totalAmount : 0;
         const balanceAmount = totalAmount - paidAmount;
 
         setOrder({
-          id: shopifyOrder.id.toString(), // Ensure ID is string
+          id: shopifyOrder.id.toString(),
           order_number: `#${shopifyOrder.order_number}`,
           created_at: shopifyOrder.created_at,
-          // Source might need specific logic or be part of notes/tags
           source: shopifyOrder.source_name === 'draft_order' ? 'from Draft Orders' : 'from Draft Orders',
-          payment_status: shopifyOrder.financial_status, // e.g., pending, paid, refunded
-          fulfillment_status: currentFulfillmentStatus, // Use the determined status
+          payment_status: shopifyOrder.financial_status,
+          fulfillment_status: currentFulfillmentStatus,
           currency: currencyCode,
           items: shopifyOrder.line_items.map((item: any) => ({
             id: item.id,
             name: item.title,
             sku: item.sku || 'N/A',
             quantity: item.quantity,
-            // Format price and total with currency
             price: formatCurrency(item.price, currencyCode),
             total: formatCurrency(item.quantity * parseFloat(item.price), currencyCode),
-            // Attempt to get variant title (like XS/S/Black)
             variant_title: item.variant_title,
-            // Placeholder for image - needs separate fetch or different API field
-            image_url: item.image?.src || undefined, // Example: Check if image data exists
+            image_url: item.image?.src || undefined,
           })),
-          // Format totals
           subtotal: formatCurrency(shopifyOrder.subtotal_price, currencyCode),
           taxes: formatCurrency(shopifyOrder.total_tax, currencyCode),
           // Extract and format shipping cost (check API response structure for the correct field)
@@ -185,10 +259,28 @@ export default function OrderDetail() {
           delivery_method: shopifyOrder.shipping_lines?.[0]?.title || 'Shipping',
           notes: shopifyOrder.note || null,
           customer: {
-            id: shopifyOrder.customer?.id,
-            name: `${shopifyOrder.customer?.first_name || ''} ${shopifyOrder.customer?.last_name || ''}`.trim() || 'No customer',
-            email: shopifyOrder.customer?.email || shopifyOrder.email || null, // Use order email as fallback
-            phone: shopifyOrder.customer?.phone || shopifyOrder.phone || null, // Use order phone as fallback
+            admin_graphql_api_id: shopifyOrder.customer?.admin_graphql_api_id || '',
+            email: shopifyOrder.customer?.email || '',
+            phone: shopifyOrder.customer?.phone || null,
+            first_name: shopifyOrder.customer?.first_name || null,
+            last_name: shopifyOrder.customer?.last_name || null,
+            note: shopifyOrder.customer?.note || null,
+            tags: shopifyOrder.customer?.tags || '',
+            verified_email: shopifyOrder.customer?.verified_email || false,
+            created_at: shopifyOrder.customer?.created_at || '',
+            updated_at: shopifyOrder.customer?.updated_at || '',
+            currency: shopifyOrder.customer?.currency || '',
+            email_marketing_consent: {
+              consent_updated_at: shopifyOrder.customer?.email_marketing_consent?.consent_updated_at || null,
+              opt_in_level: shopifyOrder.customer?.email_marketing_consent?.opt_in_level || '',
+              state: shopifyOrder.customer?.email_marketing_consent?.state || ''
+            },
+            sms_marketing_consent: {
+              state: shopifyOrder.customer?.sms_marketing_consent?.state || ''
+            },
+            tax_exempt: shopifyOrder.customer?.tax_exempt || false,
+            tax_exemptions: shopifyOrder.customer?.tax_exemptions || [],
+            multipass_identifier: shopifyOrder.customer?.multipass_identifier || null
           },
           shipping_address: {
             address: shopifyOrder.shipping_address?.address1 || null,
@@ -219,8 +311,6 @@ export default function OrderDetail() {
       } catch (err: any) {
         console.error("Failed to fetch order:", err);
         setError(`Failed to fetch order details: ${err.message || 'Unknown error'}`);
-        // Optionally set order to initial state or keep previous state
-        // setOrder(initialOrderState);
       } finally {
         setIsLoading(false);
       }
@@ -233,6 +323,31 @@ export default function OrderDetail() {
       setIsLoading(false);
     }
   }, [params?.id]);
+
+  // Add useEffect to initialize editableCustomer when order data is loaded
+  useEffect(() => {
+    if (order.customer) {
+      setEditableCustomer({
+        name: `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim() || 'No customer',
+        email: order.customer.email || '',
+        phone: order.customer.phone || '',
+        shipping_address: {
+          address: order.shipping_address.address || '',
+          city: order.shipping_address.city || '',
+          state: order.shipping_address.state || '',
+          zipCode: order.shipping_address.zipCode || '',
+          country: order.shipping_address.country || ''
+        },
+        billing_address: {
+          address: order.billing_address.address || '',
+          city: order.billing_address.city || '',
+          state: order.billing_address.state || '',
+          zipCode: order.billing_address.zipCode || '',
+          country: order.billing_address.country || ''
+        }
+      });
+    }
+  }, [order]);
 
   const handleStatusUpdate = async () => {
     setIsUpdating(true);
@@ -247,7 +362,7 @@ export default function OrderDetail() {
       });
 
       // Then update the database
-      const dbResponse = await axios.put(`/api/orders/${params!.id}`, {
+      await axios.put(`/api/orders/${params!.id}`, {
         fulfillment_status: selectedStatus,
         shopify_order_id: params!.id
       });
@@ -283,14 +398,14 @@ export default function OrderDetail() {
 
     try {
       // Update Shopify via API
-      const shopifyResponse = await axios.post(`/api/shopify/sync`, {
+      await axios.post(`/api/shopify/sync`, {
         orderId: params!.id,
         action: 'update_notes',
         notes: editableNotes
       });
 
       // Update database
-      const dbResponse = await axios.put(`/api/orders/${params!.id}`, {
+      await axios.put(`/api/orders/${params!.id}`, {
         notes: editableNotes,
         shopify_order_id: params!.id
       });
@@ -341,6 +456,66 @@ export default function OrderDetail() {
     }
   };
 
+  // Add function to handle customer updates
+  const handleCustomerUpdate = async () => {
+    setIsUpdating(true);
+    setUpdateMessage({ type: '', message: '' });
+
+    try {
+      // First update Shopify via API
+      await axios.post(`/api/shopify/sync`, {
+        orderId: params!.id,
+        action: 'update_customer',
+        customer: {
+          name: editableCustomer.name,
+          email: editableCustomer.email,
+          phone: editableCustomer.phone,
+          shipping_address: editableCustomer.shipping_address,
+          billing_address: editableCustomer.billing_address
+        }
+      });
+
+      // Then update the database
+      await axios.put(`/api/orders/${params!.id}`, {
+        customer: {
+          name: editableCustomer.name,
+          email: editableCustomer.email,
+          phone: editableCustomer.phone
+        },
+        shipping_address: editableCustomer.shipping_address,
+        billing_address: editableCustomer.billing_address,
+        shopify_order_id: params!.id
+      });
+
+      // Update local state
+      setOrder(prev => ({
+        ...prev,
+        customer: {
+          ...prev.customer,
+          name: editableCustomer.name,
+          email: editableCustomer.email,
+          phone: editableCustomer.phone
+        },
+        shipping_address: editableCustomer.shipping_address,
+        billing_address: editableCustomer.billing_address
+      }));
+
+      setUpdateMessage({
+        type: 'success',
+        message: 'Customer information updated successfully'
+      });
+    } catch (error: any) {
+      console.error('Failed to update customer:', error);
+      setUpdateMessage({
+        type: 'error',
+        message: error.response?.data?.message || 'Failed to update customer information'
+      });
+    } finally {
+      setIsUpdating(false);
+      setTimeout(() => setUpdateMessage({ type: '', message: '' }), 3000);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex justify-center items-center bg-gray-50">
@@ -367,7 +542,7 @@ export default function OrderDetail() {
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
           <div className="flex items-center">
-            <h1 className="text-xl font-bold text-indigo-600">Shopify-WMS Integration</h1>
+            <h1 className="text-xl font-bold text-indigo-600">WMS-PUSHER</h1>
           </div>
           <div className="flex items-center space-x-4">
             <Link href="/dashboard" className="text-gray-600 hover:text-gray-900">
@@ -397,14 +572,8 @@ export default function OrderDetail() {
               {/* Fulfillment Status Badge */}
               {renderStatusBadge(
                 order.fulfillment_status || 'Unfulfilled',
-                order.fulfillment_status === 'fulfilled' ? 'green' : 'yellow' // Adjust logic
+                order.fulfillment_status === 'fulfilled' ? 'green' : 'yellow'
               )}
-            </div>
-            {/* Action Buttons */}
-            <div className="flex space-x-2">
-              <button className="px-3 py-1 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Restock</button>
-              <button className="px-3 py-1 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Edit</button>
-              {/* Add Print and More Actions Dropdown */}
             </div>
           </div>
           <p className="text-sm text-gray-500">
@@ -412,13 +581,8 @@ export default function OrderDetail() {
           </p>
         </div>
 
-        {/* Status Update Message */}
-        {/* ... existing updateMessage rendering ... */}
-
-        {/* Main Grid Layout (Adjusted for 3 columns) */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-          {/* Left Column (Spanning 2 columns on large screens) */}
           <div className="lg:col-span-2 space-y-6">
 
             {/* Unfulfilled Items Card */}
@@ -452,11 +616,11 @@ export default function OrderDetail() {
                   </div>
                 ))}
                 {/* Fulfill Button */}
-                <div className="flex justify-end pt-4">
+                {/* <div className="flex justify-end pt-4">
                   <button className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
                     Fulfill items
                   </button>
-                </div>
+                </div> */}
               </div>
             </div>
 
@@ -472,7 +636,7 @@ export default function OrderDetail() {
               <div className="p-4 sm:p-6 space-y-2">
                 <div className="flex justify-between text-sm">
                   <span className="text-gray-500">Subtotal</span>
-                  <span className="text-gray-900">{order.items.length} items</span>
+                  <span className="text-gray-900">{order.items.reduce((total, item) => total + item.quantity, 0)} items</span>
                   <span className="text-gray-900">{order.subtotal}</span>
                 </div>
                 <div className="flex justify-between text-sm">
@@ -498,65 +662,97 @@ export default function OrderDetail() {
                 </div>
                 <div className="flex justify-between text-sm font-medium">
                   <span className="text-gray-900">Balance</span>
-                  <span className="text-gray-500">Payment due when invoice is sent</span> {/* Adjust text */}
                   <span className="text-gray-900">{order.balance}</span>
                 </div>
                 {/* Action Buttons */}
-                <div className="flex justify-end space-x-2 pt-4">
+                {/* <div className="flex justify-end space-x-2 pt-4">
                   <button className="px-3 py-1 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Send invoice</button>
                   <button className="px-3 py-1 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-800 hover:bg-gray-900">Mark as paid</button>
-                </div>
+                </div> */}
               </div>
             </div>
 
             {/* Timeline Card */}
-            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
+            {/* <div className="bg-white shadow overflow-hidden sm:rounded-lg">
               <div className="px-4 py-4 sm:px-6 border-b border-gray-200">
                 <h3 className="text-base font-semibold leading-6 text-gray-900">Timeline</h3>
-              </div>
-              <div className="p-4 sm:p-6">
-                {/* Comment Input */}
+              </div> */}
+            {/* <div className="p-4 sm:p-6">
                 <div className="flex items-start space-x-3">
-                  <div className="flex-shrink-0 w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-sm font-medium text-gray-600">IM</div> {/* Placeholder Initials */}
-                  <div className="min-w-0 flex-1">
+                  <div className="flex-shrink-0 w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-sm font-medium text-gray-600">IM</div> Placeholder Initials */}
+            {/* <div className="min-w-0 flex-1">
                     <textarea
                       rows={3}
                       className="block w-full border border-gray-300 rounded-md shadow-sm sm:text-sm p-2 focus:ring-indigo-500 focus:border-indigo-500"
                       placeholder="Leave a comment..."
-                      value={editableNotes || ''} // Use editableNotes state
+                      value={editableNotes || ''}
                       onChange={(e) => setEditableNotes(e.target.value)}
                     />
                     <div className="mt-2 flex justify-between items-center">
-                      {/* Add formatting buttons if needed */}
                       <div></div>
                       <button
-                        onClick={handleNotesUpdate} // Reuse or adapt notes update logic
+                        onClick={handleNotesUpdate}
                         disabled={isUpdating}
                         className="px-3 py-1 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
                       >
                         {isUpdating ? 'Posting...' : 'Post'}
                       </button>
                     </div>
-                  </div>
-                </div>
-                {/* Display existing comments/timeline events here */}
+                  </div> */}
+            {/* </div>
                 <p className="mt-4 text-center text-xs text-gray-500">Only you and other staff can see comments</p>
-              </div>
-            </div>
+              </div> */}
+            {/* </div> */}
 
           </div> {/* End Left Column */}
 
           {/* Right Column (Sidebar) */}
           <div className="lg:col-span-1 space-y-6">
 
-            {/* Notes Card */}
             <div className="bg-white shadow overflow-hidden sm:rounded-lg">
               <div className="px-4 py-3 sm:px-6 border-b border-gray-200 flex justify-between items-center">
                 <h3 className="text-base font-semibold leading-6 text-gray-900">Notes</h3>
-                <button className="text-indigo-600 hover:text-indigo-900 text-sm font-medium">Edit</button> {/* Add edit functionality */}
+                {!isEditingNotes && (
+                  <button
+                    className="text-indigo-600 hover:text-indigo-900 text-sm font-medium"
+                    onClick={() => setIsEditingNotes(true)}
+                  >
+                    Edit
+                  </button>
+                )}
               </div>
               <div className="p-4 sm:p-6 text-sm text-gray-500">
-                {order.notes ? order.notes : "No notes from customer"}
+                {isEditingNotes ? (
+                  <div>
+                    <textarea
+                      className="w-full border rounded p-2"
+                      value={editableNotes || ""}
+                      onChange={e => setEditableNotes(e.target.value)}
+                    />
+                    <div className="mt-2 flex space-x-2">
+                      <button
+                        className="px-3 py-1 bg-indigo-600 text-white rounded"
+                        onClick={async () => {
+                          await handleNotesUpdate();
+                          await handleStatusUpdate();
+                          setIsEditingNotes(false);
+                        }}
+                        disabled={isUpdating}
+                      >
+                        Save
+                      </button>
+                      <button
+                        className="px-3 py-1 bg-gray-200 text-gray-700 rounded"
+                        onClick={() => setIsEditingNotes(false)}
+                        disabled={isUpdating}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <span>{order.notes ? order.notes : "No notes from customer"}</span>
+                )}
               </div>
             </div>
 
@@ -564,91 +760,198 @@ export default function OrderDetail() {
             <div className="bg-white shadow overflow-hidden sm:rounded-lg">
               <div className="px-4 py-3 sm:px-6 border-b border-gray-200 flex justify-between items-center">
                 <h3 className="text-base font-semibold leading-6 text-gray-900">Customer</h3>
-                <button className="text-indigo-600 hover:text-indigo-900 text-sm font-medium">Edit</button> {/* Add edit functionality */}
+                <button
+                  onClick={async () => {
+                    await handleCustomerUpdate();
+                    await handleStatusUpdate();
+                  }}
+                  disabled={isUpdating}
+                  className="text-indigo-600 hover:text-indigo-900 text-sm font-medium disabled:opacity-50"
+                >
+                  {isUpdating ? 'Saving...' : 'Save Changes'}
+                </button>
               </div>
               <div className="p-4 sm:p-6 space-y-4">
-                {/* Search/Create Input */}
-                <input type="text" placeholder="Search or create a customer" className="block w-full border border-gray-300 rounded-md shadow-sm sm:text-sm p-2" />
-                {/* Customer Name Link */}
-                {order.customer.name !== 'No customer' && (
-                  <a href="#" className="text-sm font-medium text-indigo-600 hover:underline block">{order.customer.name}</a>
-                )}
+                {/* Customer Name */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">Name</label>
+                  <input
+                    type="text"
+                    value={editableCustomer.name}
+                    onChange={(e) => setEditableCustomer(prev => ({ ...prev, name: e.target.value }))}
+                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                  />
+                </div>
                 {/* Contact Info */}
-                <div className="border-t pt-4 mt-4">
-                  <h4 className="text-sm font-medium text-gray-900 mb-1">Contact information</h4>
-                  <p className="text-sm text-gray-500">{order.customer.email || 'No email provided'}</p>
-                  <p className="text-sm text-gray-500">{order.customer.phone || 'No phone number'}</p>
+                <div className="border-t pt-4">
+                  <h4 className="text-sm font-medium text-gray-900 mb-2">Contact information</h4>
+                  <div className="space-y-2">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Email</label>
+                      <input
+                        type="email"
+                        value={editableCustomer.email}
+                        onChange={(e) => setEditableCustomer(prev => ({ ...prev, email: e.target.value }))}
+                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Phone</label>
+                      <input
+                        type="tel"
+                        value={editableCustomer.phone}
+                        onChange={(e) => setEditableCustomer(prev => ({ ...prev, phone: e.target.value }))}
+                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                      />
+                    </div>
+                  </div>
                 </div>
                 {/* Shipping Address */}
-                <div className="border-t pt-4 mt-4">
-                  <h4 className="text-sm font-medium text-gray-900 mb-1">Shipping address</h4>
-                  {order.shipping_address.address ? (
-                    <address className="text-sm text-gray-500 not-italic">
-                      {order.shipping_address.address}<br />
-                      {order.shipping_address.city}, {order.shipping_address.state} {order.shipping_address.zipCode}<br />
-                      {order.shipping_address.country}
-                    </address>
-                  ) : (
-                    <p className="text-sm text-gray-500">No shipping address provided</p>
-                  )}
+                <div className="border-t pt-4">
+                  <h4 className="text-sm font-medium text-gray-900 mb-2">Shipping address</h4>
+                  <div className="space-y-2">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Address</label>
+                      <input
+                        type="text"
+                        value={editableCustomer.shipping_address.address}
+                        onChange={(e) => setEditableCustomer(prev => ({
+                          ...prev,
+                          shipping_address: { ...prev.shipping_address, address: e.target.value }
+                        }))}
+                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">City</label>
+                        <input
+                          type="text"
+                          value={editableCustomer.shipping_address.city}
+                          onChange={(e) => setEditableCustomer(prev => ({
+                            ...prev,
+                            shipping_address: { ...prev.shipping_address, city: e.target.value }
+                          }))}
+                          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">State</label>
+                        <input
+                          type="text"
+                          value={editableCustomer.shipping_address.state}
+                          onChange={(e) => setEditableCustomer(prev => ({
+                            ...prev,
+                            shipping_address: { ...prev.shipping_address, state: e.target.value }
+                          }))}
+                          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">ZIP Code</label>
+                        <input
+                          type="text"
+                          value={editableCustomer.shipping_address.zipCode}
+                          onChange={(e) => setEditableCustomer(prev => ({
+                            ...prev,
+                            shipping_address: { ...prev.shipping_address, zipCode: e.target.value }
+                          }))}
+                          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Country</label>
+                        <input
+                          type="text"
+                          value={editableCustomer.shipping_address.country}
+                          onChange={(e) => setEditableCustomer(prev => ({
+                            ...prev,
+                            shipping_address: { ...prev.shipping_address, country: e.target.value }
+                          }))}
+                          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                        />
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                {/* Billing Address */}
-                <div className="border-t pt-4 mt-4">
-                  <h4 className="text-sm font-medium text-gray-900 mb-1">Billing address</h4>
-                  {order.billing_address.address ? (
-                    <address className="text-sm text-gray-500 not-italic">
-                      {order.billing_address.address}<br />
-                      {order.billing_address.city}, {order.billing_address.state} {order.billing_address.zipCode}<br />
-                      {order.billing_address.country}
-                    </address>
-                  ) : (
-                    <p className="text-sm text-gray-500">No billing address provided</p>
-                  )}
-                </div>
+                {order.billing_address.address && (
+                  <div className="border-t pt-4">
+                    <h4 className="text-sm font-medium text-gray-900 mb-2">Billing address</h4>
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Address</label>
+                        <input
+                          type="text"
+                          value={editableCustomer.billing_address.address}
+                          onChange={(e) => setEditableCustomer(prev => ({
+                            ...prev,
+                            billing_address: { ...prev.billing_address, address: e.target.value }
+                          }))}
+                          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">City</label>
+                          <input
+                            type="text"
+                            value={editableCustomer.billing_address.city}
+                            onChange={(e) => setEditableCustomer(prev => ({
+                              ...prev,
+                              billing_address: { ...prev.billing_address, city: e.target.value }
+                            }))}
+                            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">State</label>
+                          <input
+                            type="text"
+                            value={editableCustomer.billing_address.state}
+                            onChange={(e) => setEditableCustomer(prev => ({
+                              ...prev,
+                              billing_address: { ...prev.billing_address, state: e.target.value }
+                            }))}
+                            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                          />
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">ZIP Code</label>
+                          <input
+                            type="text"
+                            value={editableCustomer.billing_address.zipCode}
+                            onChange={(e) => setEditableCustomer(prev => ({
+                              ...prev,
+                              billing_address: { ...prev.billing_address, zipCode: e.target.value }
+                            }))}
+                            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">Country</label>
+                          <input
+                            type="text"
+                            value={editableCustomer.billing_address.country}
+                            onChange={(e) => setEditableCustomer(prev => ({
+                              ...prev,
+                              billing_address: { ...prev.billing_address, country: e.target.value }
+                            }))}
+                            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
+          </div>
 
-            {/* Conversion Summary Card */}
-            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-              <div className="px-4 py-3 sm:px-6 border-b border-gray-200">
-                <h3 className="text-base font-semibold leading-6 text-gray-900">Conversion summary</h3>
-              </div>
-              <div className="p-4 sm:p-6 text-sm text-gray-500">
-                There aren't any conversion details available for this order.
-                <a href="#" className="text-indigo-600 hover:underline ml-1">Learn more</a>
-              </div>
-            </div>
-
-            {/* Order Risk Card */}
-            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-              <div className="px-4 py-3 sm:px-6 border-b border-gray-200 flex justify-between items-center">
-                <h3 className="text-base font-semibold leading-6 text-gray-900">Order risk</h3>
-                {/* Add Risk Icon/Link if available */}
-              </div>
-              <div className="p-4 sm:p-6 text-sm text-gray-500">
-                Analysis not available
-              </div>
-            </div>
-
-            {/* Tags Card */}
-            <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-              <div className="px-4 py-3 sm:px-6 border-b border-gray-200">
-                <h3 className="text-base font-semibold leading-6 text-gray-900">Tags</h3>
-              </div>
-              <div className="p-4 sm:p-6">
-                <input type="text" placeholder="Find or create tags" className="block w-full border border-gray-300 rounded-md shadow-sm sm:text-sm p-2" />
-                {/* Display existing tags */}
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {order.tags.map(tag => (
-                    <span key={tag} className="px-2 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">{tag} <button className="ml-1 text-gray-400 hover:text-gray-600">&times;</button></span>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-          </div> {/* End Right Column */}
-
-        </div> {/* End Main Grid */}
+        </div>
       </main>
     </div>
   );

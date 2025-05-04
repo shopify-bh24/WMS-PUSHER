@@ -124,7 +124,7 @@ export async function POST(request: Request) {
           data: {
             order: {
               id: data.orderId,
-              tags: `wms_status:${data.status}` // Example tagging
+              tags: `${data.status}` // Example tagging
             }
           }
         });
@@ -145,7 +145,7 @@ export async function POST(request: Request) {
         console.log(`Syncing ${ordersToSync.length} orders...`);
         // Placeholder: In reality, loop through orders and update WMS
         for (const order of ordersToSync) {
-          // await updateWMSOrder(order.id, order.financial_status); // Example
+          // await updateWMSOrder(order.id, order.financial_status);
         }
 
         return NextResponse.json({

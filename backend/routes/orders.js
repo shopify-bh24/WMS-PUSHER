@@ -94,11 +94,29 @@ router.post("/sync", async (req, res) => {
 
             // Customer mapping
             customer: {
-                shopifyId: shopifyOrder.customer?.id,
-                email: shopifyOrder.customer?.email,
-                firstName: shopifyOrder.customer?.first_name,
-                lastName: shopifyOrder.customer?.last_name,
-                phone: shopifyOrder.customer?.phone
+                id: shopifyOrder.customer?.id,
+                admin_graphql_api_id: shopifyOrder.customer?.admin_graphql_api_id || '',
+                created_at: shopifyOrder.customer?.created_at || new Date().toISOString(),
+                currency: shopifyOrder.customer?.currency || 'USD',
+                email: shopifyOrder.customer?.email || '',
+                email_marketing_consent: {
+                    consent_updated_at: shopifyOrder.customer?.email_marketing_consent?.consent_updated_at || null,
+                    opt_in_level: shopifyOrder.customer?.email_marketing_consent?.opt_in_level || 'single_opt_in',
+                    state: shopifyOrder.customer?.email_marketing_consent?.state || 'not_subscribed'
+                },
+                first_name: shopifyOrder.customer?.first_name || null,
+                last_name: shopifyOrder.customer?.last_name || null,
+                multipass_identifier: shopifyOrder.customer?.multipass_identifier || null,
+                note: shopifyOrder.customer?.note || null,
+                phone: shopifyOrder.customer?.phone || null,
+                sms_marketing_consent: {
+                    state: shopifyOrder.customer?.sms_marketing_consent?.state || 'not_subscribed'
+                },
+                tags: shopifyOrder.customer?.tags || '',
+                tax_exempt: shopifyOrder.customer?.tax_exempt || false,
+                tax_exemptions: shopifyOrder.customer?.tax_exemptions || [],
+                updated_at: shopifyOrder.customer?.updated_at || new Date().toISOString(),
+                verified_email: shopifyOrder.customer?.verified_email || false
             },
 
             // Map line items - updated to match Shopify API structure exactly

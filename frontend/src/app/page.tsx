@@ -8,7 +8,7 @@ export default function Home() {
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
           <div className="flex items-center">
-            <h1 className="text-xl font-bold text-indigo-600">Shopify-WMS Integration</h1>
+            <h1 className="text-xl font-bold text-indigo-600">WMS-PUSHER</h1>
           </div>
           <div className="flex items-center space-x-4">
             <Link href="/login" className="px-4 py-2 rounded-md bg-indigo-600 text-white hover:bg-indigo-700 transition-colors">
@@ -105,7 +105,7 @@ export default function Home() {
                 Contact
               </a>
             </div>
-            <p className="mt-8 text-center md:mt-0 text-sm text-gray-500">&copy; 2025 Shopify-WMS Integration. All rights reserved.</p>
+            <p className="mt-8 text-center md:mt-0 text-sm text-gray-500">&copy; 2025 WMS-PUSHER. All rights reserved.</p>
           </div>
         </div>
       </footer>

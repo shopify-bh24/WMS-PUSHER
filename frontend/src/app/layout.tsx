@@ -8,7 +8,7 @@ import 'react-toastify/dist/ReactToastify.css';
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Shopify WMS Integration",
+  title: "WMS-PUSHER",
   description: "Integrate Shopify with your Warehouse Management System",
 };
 

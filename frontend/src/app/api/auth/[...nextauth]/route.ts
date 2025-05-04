@@ -6,6 +6,7 @@ declare module "next-auth" {
       id: string;
       role: string;
       accessToken: string;
+      name: string;
     };
   }
 }
@@ -22,7 +23,7 @@ const handler = NextAuth({
         username: { label: "Username", type: "text" },
         password: { label: "Password", type: "password" }
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         try {
           const response = await axios.post('http://localhost:5000/api/auth/login', {
             username: credentials?.username,
@@ -34,6 +35,7 @@ const handler = NextAuth({
             return {
               id: response.data.user.id,
               name: response.data.user.username,
+              username: response.data.user.username,
               role: response.data.user.role,
               token: response.data.token
             };

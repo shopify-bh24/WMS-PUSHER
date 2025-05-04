@@ -24,12 +24,12 @@ export default function RegisterPage() {
         role
       });
 
-      if (response.data.success) {
+      if (response.data.message === "User registered successfully") {
         // Registration successful, redirect to login or dashboard
         alert('Registration successful! Please log in.'); // Simple feedback
         router.push('/login'); // Redirect to login page after registration
       } else {
-        setError(response.data.error || 'Registration failed.');
+        setError(response.data.message || 'Registration failed.');
       }
     } catch (err: any) {
       console.error('Registration request failed:', err);
@@ -42,7 +42,7 @@ export default function RegisterPage() {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <h1 className="text-center text-3xl font-extrabold text-indigo-600">Shopify-WMS Integration</h1>
+        <h1 className="text-center text-3xl font-extrabold text-indigo-600">WMS-PUSHER</h1>
         <h2 className="mt-6 text-center text-2xl font-bold text-gray-900">Register a new account</h2>
       </div>
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">

@@ -11,17 +11,44 @@ import { format } from 'date-fns'; // Import date-fns for formatting
 interface Order {
   id: string;
   orderNumber: string;
-  customer: string;
-  date: string; // Keep original date string for potential use
-  formattedDate: string; // Add formatted date string
+  customer: Customer | null;
+  date: string;
+  formattedDate: string;
   channel: string;
   total: string;
+  note: string;
   paymentStatus: string;
   fulfillmentStatus: string;
-  items: string;
+  items: Array<{ quantity: number }>;
   deliveryStatus: string;
   deliveryMethod: string;
   tags: string;
+}
+
+interface Customer {
+  admin_graphql_api_id: string;
+  created_at: string;
+  currency: string;
+  email: string;
+  email_marketing_consent: {
+    consent_updated_at: string | null;
+    opt_in_level: string;
+    state: string;
+  };
+  first_name: string | null;
+  id: string;
+  last_name: string | null;
+  multipass_identifier: string | null;
+  note: string | null;
+  phone: string | null;
+  sms_marketing_consent: {
+    state: string;
+  };
+  tags: string;
+  tax_exempt: boolean;
+  tax_exemptions: string[];
+  updated_at: string;
+  verified_email: boolean;
 }
 
 export default function Dashboard() {
@@ -33,6 +60,8 @@ export default function Dashboard() {
   const [syncStatus, setSyncStatus] = useState('idle'); // idle, syncing, success, error
 
   useEffect(() => {
+    console.log(session, ": session data console");
+
     if (status === 'unauthenticated') {
       router.push('/login');
     }
@@ -45,20 +74,21 @@ export default function Dashboard() {
     try {
       // Fetch from the API endpoint that handles both fetching and backend sync
       const response = await axios.get('/api/shopify/orders');
-      console.log(response.data.orders[0].line_items[0], " : orders from /api/shopify/orders");
+      console.log(response.data, " : orders from /api/shopify/orders");
 
       if (response.data.success && Array.isArray(response.data.orders)) {
         setOrders(response.data.orders.map((order: any): Order => ({ // Map to the Order interface
           id: order.id.toString(), // Ensure ID is string
           orderNumber: order.order_number || order.name?.replace('#', '') || `ID:${order.id}`, // Fallback if order_number is missing
-          customer: order.customer ? `${order.customer?.first_name || ''} ${order.customer?.last_name || ''}`.trim() : 'No customer',
+          customer: order.customer,
           date: order.created_at, // Store original date
           formattedDate: order.created_at ? format(new Date(order.created_at), 'MMM d, h:mm a') : 'N/A',
           channel: order.source_name || 'Online Store',
           total: order.currency ? `¥${order.total_price}` : `$${order.total_price}`,
           paymentStatus: order.financial_status || 'Pending',
+          note: order.note,
           fulfillmentStatus: order.fulfillment_status || 'Unfulfilled',
-          items: `${order.line_items?.length || 0} items`,
+          items: order.line_items?.map((item: any) => ({ quantity: item.quantity })) || [],
           deliveryStatus: order.fulfillment_status === 'fulfilled' ? 'Shipped' : '',
           deliveryMethod: order.shipping_lines?.[0]?.title || 'Shipping',
           tags: order.tags || ''
@@ -141,7 +171,7 @@ export default function Dashboard() {
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
           <div className="flex items-center">
-            <h1 className="text-xl font-bold text-indigo-600">Shopify-WMS Integration</h1>
+            <h1 className="text-xl font-bold text-indigo-600">WMS-PUSHER</h1>
           </div>
           <div className="flex items-center space-x-4">
             {/* Add Inventory Link */}
@@ -149,7 +179,7 @@ export default function Dashboard() {
               Inventory
             </Link>
             <span className="text-sm text-gray-700">
-              Welcome, {session?.user?.id || 'User'}
+              Welcome, {session?.user?.name || 'User'}
             </span>
             <Link href="/api/auth/signout" className="px-4 py-2 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors">
               Logout
@@ -281,18 +311,29 @@ export default function Dashboard() {
                 {filteredOrders.length > 0 ? (
                   filteredOrders.map((order) => ( // Use the Order interface type
                     <tr key={order.id} className="hover:bg-gray-50">
-                      {/* ... existing checkbox cell ... */}
                       <td className="px-4 py-2 whitespace-nowrap text-sm font-medium text-indigo-600">
-                        <Link href={`/orders/${order.id}`}>
-                          {order.orderNumber} {/* Display order number */}
-                        </Link>
+                        <span className="relative group">
+                          <Link href={`/orders/${order.id}`}>
+                            {order.orderNumber}
+                          </Link>
+                          {order.note && (
+                            <span className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block bg-gray-800 text-white text-xs rounded px-2 py-1 z-10 whitespace-pre-line">
+                              {order.note}
+                            </span>
+                          )}
+                        </span>
                       </td>
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                         {order.formattedDate} {/* Display formatted date */}
                       </td>
-                      {/* ... other data cells ... */}
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
-                        {order.customer}
+                        {order.customer
+                          ? (
+                            order.customer.first_name || order.customer.last_name
+                              ? `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim()
+                              : order.customer.email || 'No customer'
+                          )
+                          : 'No customer'}
                       </td>
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                         {order.channel}
@@ -321,7 +362,7 @@ export default function Dashboard() {
                         </span>
                       </td>
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
-                        {order.items}
+                        {order.items.reduce((total, item) => total + item.quantity, 0)} items
                       </td>
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
                         {order.deliveryStatus}

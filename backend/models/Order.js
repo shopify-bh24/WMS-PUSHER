@@ -90,11 +90,29 @@ const addressSchema = new mongoose.Schema({
 
 // Customer schema
 const customerSchema = new mongoose.Schema({
-  shopifyId: Number,
+  id: Number,
+  admin_graphql_api_id: String,
+  created_at: String,
+  currency: String,
   email: String,
-  firstName: String,
-  lastName: String,
-  phone: String
+  email_marketing_consent: {
+    consent_updated_at: String,
+    opt_in_level: String,
+    state: String
+  },
+  first_name: String,
+  last_name: String,
+  multipass_identifier: String,
+  note: String,
+  phone: String,
+  sms_marketing_consent: {
+    state: String
+  },
+  tags: String,
+  tax_exempt: Boolean,
+  tax_exemptions: [String],
+  updated_at: String,
+  verified_email: Boolean
 }, { _id: false });
 
 // Main Order schema

@@ -1,4 +1,4 @@
-# Shopify-WMS Integration
+# WMS-PUSHER
 
 A professional web application that connects Shopify with warehouse management systems (WMS) for seamless order processing and inventory control.
 
