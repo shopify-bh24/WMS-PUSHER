@@ -77,3 +77,86 @@ export async function GET(request: Request, { params }: RouteParams) {
         );
     }
 }
+
+export async function PUT(request: Request, context: { params: { id: string } }) {
+    try {
+        const { id } = await Promise.resolve(context.params);
+        const body = await request.json();
+        console.log('Request body:', body);
+
+        if (!id) {
+            return NextResponse.json({ success: false, error: 'Order ID is required' }, { status: 400 });
+        }
+
+        if (!body.order) {
+            return NextResponse.json({ success: false, error: 'Order data is required' }, { status: 400 });
+        }
+
+        // First update Shopify
+        const client = await getShopifyRestClient();
+        const shopifyResponse = await client.put({
+            path: `orders/${id}`,
+            data: {
+                order: {
+                    id: id,
+                    note: body.order.note,
+                    customer: body.order.customer,
+                    shipping_address: body.order.shipping_address,
+                    billing_address: body.order.billing_address
+                }
+            }
+        });
+
+        if (!shopifyResponse.body?.order) {
+            throw new Error('Failed to update order in Shopify');
+        }
+
+        // Then update MongoDB through backend API
+        const backendResponse = await fetch(`http://localhost:5000/api/orders/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+        });
+
+        let responseData;
+        try {
+            responseData = await backendResponse.json();
+        } catch (error) {
+            console.error('Error parsing backend response:', error);
+            return NextResponse.json(
+                { success: false, error: 'Invalid response from server' },
+                { status: 500 }
+            );
+        }
+
+        if (!backendResponse.ok) {
+            return NextResponse.json(
+                { success: false, error: responseData.message || 'Failed to update order in database' },
+                { status: backendResponse.status }
+            );
+        }
+
+        return NextResponse.json({
+            success: true,
+            order: {
+                ...responseData.order,
+                note: shopifyResponse.body.order.note,
+                customer: shopifyResponse.body.order.customer,
+                shipping_address: shopifyResponse.body.order.shipping_address,
+                billing_address: shopifyResponse.body.order.billing_address
+            },
+        });
+
+    } catch (error: any) {
+        console.error('Error updating order:', error);
+        const errorMessage = error.message || 'Failed to update order';
+        const statusCode = error.response?.code || 500;
+
+        return NextResponse.json(
+            { success: false, error: errorMessage },
+            { status: statusCode }
+        );
+    }
+}

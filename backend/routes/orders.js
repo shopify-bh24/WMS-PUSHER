@@ -37,14 +37,96 @@ router.get("/:id", async (req, res) => {
     }
 });
 
-// Update an order by Database ID (_id)
+// Update customer, shipping, and billing address for an order
 router.put("/:id", async (req, res) => {
+    console.log("put request");
+
     try {
-        const order = await Order.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
-        if (!order) return res.status(404).json({ message: "Order not found" });
-        res.json(order);
+        const { order } = req.body;
+        console.log(order, "order");
+
+        if (!order) {
+            return res.status(400).json({ success: false, message: "Order data is required" });
+        }
+
+        // Build the update object
+        const update = {};
+
+        // Handle note update
+        if (order.note !== undefined) {
+            update.note = order.note;
+        }
+
+        // Handle customer data
+        if (order.customer) {
+            update.customer = order.customer;
+        }
+
+        // Handle shipping address
+        if (order.shipping_address) {
+            update.shippingAddress = {
+                firstName: order.shipping_address.first_name || null,
+                lastName: order.shipping_address.last_name || null,
+                address1: order.shipping_address.address1 || null,
+                address2: order.shipping_address.address2 || null,
+                city: order.shipping_address.city || null,
+                province: order.shipping_address.province || null,
+                provinceCode: order.shipping_address.province_code || null,
+                country: order.shipping_address.country || null,
+                countryCode: order.shipping_address.country_code || null,
+                zip: order.shipping_address.zip || null,
+                phone: order.shipping_address.phone || null,
+                company: order.shipping_address.company || null,
+                name: order.shipping_address.name || null
+            };
+        }
+
+        // Handle billing address
+        if (order.billing_address) {
+            update.billingAddress = {
+                firstName: order.billing_address.first_name || null,
+                lastName: order.billing_address.last_name || null,
+                address1: order.billing_address.address1 || null,
+                address2: order.billing_address.address2 || null,
+                city: order.billing_address.city || null,
+                province: order.billing_address.province || null,
+                provinceCode: order.billing_address.province_code || null,
+                country: order.billing_address.country || null,
+                countryCode: order.billing_address.country_code || null,
+                zip: order.billing_address.zip || null,
+                phone: order.billing_address.phone || null,
+                company: order.billing_address.company || null,
+                name: order.billing_address.name || null
+            };
+        }
+
+        console.log("Update object:", update);
+
+        // Find and update the order
+        const updatedOrder = await Order.findOneAndUpdate(
+            { shopifyId: req.params.id },
+            { $set: update },
+            { new: true, runValidators: true }
+        );
+
+        if (!updatedOrder) {
+            return res.status(404).json({
+                success: false,
+                message: `Order with shopifyId ${req.params.id} not found`
+            });
+        }
+
+        res.json({
+            success: true,
+            order: updatedOrder
+        });
     } catch (err) {
-        res.status(500).json({ message: "Failed to update order", error: err.message });
+        console.error('Error updating order:', err);
+        res.status(500).json({
+            success: false,
+            message: "Failed to update order",
+            error: err.message
+        });
     }
 });
 
@@ -119,7 +201,6 @@ router.post("/sync", async (req, res) => {
                 verified_email: shopifyOrder.customer?.verified_email || false
             },
 
-            // Map line items - updated to match Shopify API structure exactly
             lineItems: shopifyOrder.line_items?.map((item, index) => {
                 return {
                     shopifyId: item.id,

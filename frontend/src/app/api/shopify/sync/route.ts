@@ -84,7 +84,7 @@ export async function GET(request: Request) {
 
 // POST handler to sync orders between Shopify and WMS
 export async function POST(request: Request) {
-  const shopName = process.env.SHOPIFY_SHOP_NAME || 'j-wi-co-jp.myshopify.com'; // Replace with dynamic logic
+  const shopName = process.env.SHOPIFY_SHOP_NAME || 'j-wi-co-jp.myshopify.com';
 
   if (!process.env.SHOPIFY_API_KEY || !process.env.SHOPIFY_API_SECRET_KEY || !shopName || !process.env.SHOPIFY_OFFLINE_ACCESS_TOKEN) {
     console.error('Missing Shopify API credentials or shop name in environment variables.');
@@ -118,7 +118,6 @@ export async function POST(request: Request) {
         await updateWMSOrder(data.orderId, data.status);
 
         // Update Shopify order tags (example)
-        // Ref: https://shopify.dev/docs/api/admin-rest/latest/resources/order#put-orders-order-id
         await client.put({
           path: `orders/${data.orderId}`,
           data: {
@@ -132,6 +131,34 @@ export async function POST(request: Request) {
         return NextResponse.json({
           success: true,
           message: `Order ${data.orderId} status updated to ${data.status} in WMS and tagged in Shopify`
+        });
+
+      case 'update_customer':
+        if (!data.customer) {
+          return NextResponse.json(
+            { success: false, error: 'Missing customer for update_customer action' },
+            { status: 400 }
+          );
+        }
+
+        // Update customer and address info in Shopify order
+        await client.put({
+          path: `orders/${data.orderId}`,
+          data: {
+            order: {
+              id: data.orderId,
+              email: data.customer.email,
+              phone: data.customer.phone,
+              shipping_address: data.customer.shipping_address,
+              billing_address: data.customer.billing_address,
+              // Add more fields as needed
+            }
+          }
+        });
+
+        return NextResponse.json({
+          success: true,
+          message: `Order ${data.orderId} customer info updated in Shopify`
         });
 
       case 'sync_all':

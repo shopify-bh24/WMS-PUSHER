@@ -4,6 +4,16 @@ import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import axios from 'axios';
+import { getNames } from 'country-list';
+import dynamic from 'next/dynamic';
+import 'react-phone-number-input/style.css';
+// import { E164Number } from 'libphonenumber-js';
+
+// Import PhoneInput with dynamic import
+const PhoneInput = dynamic(
+  () => import('react-phone-number-input').then(mod => mod.default),
+  { ssr: false }
+);
 
 // Define a more detailed type for the order state
 interface OrderItem {
@@ -27,8 +37,8 @@ interface OrderState {
   currency: string; // e.g., "JPY"
   items: OrderItem[];
   subtotal: string; // Formatted
-  taxes: string; // Formatted
-  shipping_cost: string; // Formatted shipping cost << ADDED
+  taxes: string;
+  shipping_cost: string;
   total: string; // Formatted
   paid: string; // Formatted amount paid
   balance: string; // Formatted balance due
@@ -53,25 +63,43 @@ interface OrderState {
     sms_marketing_consent: {
       state: string;
     };
-    tags: string;
+    tags: string[];
     tax_exempt: boolean;
     tax_exemptions: string[];
     updated_at: string;
     verified_email: boolean;
   };
   shipping_address: {
-    address: string | null;
+    address1: string | null;
+    address2: string | null;
     city: string | null;
-    state: string | null;
-    zipCode: string | null;
+    company: string | null;
     country: string | null;
+    country_code: string | null;
+    first_name: string | null;
+    last_name: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    name: string | null;
+    phone: string | null;
+    province: string | null;
+    province_code: string | null;
+    zip: string | null;
   };
-  billing_address: { // Add billing address
-    address: string | null;
+  billing_address: {
+    address1: string | null;
+    address2: string | null;
     city: string | null;
-    state: string | null;
-    zipCode: string | null;
+    company: string | null;
     country: string | null;
+    country_code: string | null;
+    first_name: string | null;
+    last_name: string | null;
+    name: string | null;
+    phone: string | null;
+    province: string | null;
+    province_code: string | null;
+    zip: string | null;
   };
   // Placeholder for data not yet fetched/implemented
   timeline: any[];
@@ -82,22 +110,43 @@ interface OrderState {
 }
 
 interface EditableCustomer {
-  name: string;
+  id?: string;
   email: string;
-  phone: string;
+  first_name: string | null;
+  last_name: string | null;
+  phone: string | null;
+  tags: string[];
   shipping_address: {
-    address: string;
-    city: string;
-    state: string;
-    zipCode: string;
-    country: string;
+    address1: string | null;
+    address2: string | null;
+    city: string | null;
+    company: string | null;
+    country: string | null;
+    country_code: string | null;
+    first_name: string | null;
+    last_name: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    name: string | null;
+    phone: string | null;
+    province: string | null;
+    province_code: string | null;
+    zip: string | null;
   };
   billing_address: {
-    address: string;
-    city: string;
-    state: string;
-    zipCode: string;
-    country: string;
+    address1: string | null;
+    address2: string | null;
+    city: string | null;
+    company: string | null;
+    country: string | null;
+    country_code: string | null;
+    first_name: string | null;
+    last_name: string | null;
+    name: string | null;
+    phone: string | null;
+    province: string | null;
+    province_code: string | null;
+    zip: string | null;
   };
 }
 
@@ -109,15 +158,15 @@ const initialOrderState: OrderState = {
   source: '',
   payment_status: 'pending',
   fulfillment_status: null,
-  currency: 'USD', // Default currency, will be updated
+  currency: 'USD',
   items: [],
   subtotal: '¥0',
   taxes: '¥0',
-  shipping_cost: '¥0', // Initialize shipping cost << ADDED
+  shipping_cost: '¥0',
   total: '¥0',
   paid: '¥0',
   balance: '¥0',
-  delivery_method: 'Shipping', // Assuming default
+  delivery_method: 'Shipping',
   notes: null,
   customer: {
     id: undefined,
@@ -138,19 +187,49 @@ const initialOrderState: OrderState = {
     sms_marketing_consent: {
       state: 'not_subscribed'
     },
-    tags: '',
+    tags: [],
     tax_exempt: false,
     tax_exemptions: [],
     updated_at: new Date().toISOString(),
     verified_email: false
   },
-  shipping_address: { address: null, city: null, state: null, zipCode: null, country: null },
-  billing_address: { address: null, city: null, state: null, zipCode: null, country: null },
+  shipping_address: {
+    address1: null,
+    address2: null,
+    city: null,
+    company: null,
+    country: null,
+    country_code: null,
+    first_name: null,
+    last_name: null,
+    latitude: null,
+    longitude: null,
+    name: null,
+    phone: null,
+    province: null,
+    province_code: null,
+    zip: null,
+  },
+  billing_address: {
+    address1: null,
+    address2: null,
+    city: null,
+    company: null,
+    country: null,
+    country_code: null,
+    first_name: null,
+    last_name: null,
+    name: null,
+    phone: null,
+    province: null,
+    province_code: null,
+    zip: null,
+  },
   timeline: [],
   conversion_summary: null,
   order_risk: null,
   tags: [],
-  wmsStatus: 'Unknown', // Initialize WMS status << ADDED
+  wmsStatus: 'Unknown',
 };
 
 
@@ -166,28 +245,81 @@ export default function OrderDetail() {
   const [editableNotes, setEditableNotes] = useState<string | null>(null);
   const [updateMessage, setUpdateMessage] = useState({ type: '', message: '' });
   const [error, setError] = useState('');
+  const countries = getNames(); // returns an object: { 'US': 'United States', ... }
+  const countryArray: string[] = Object.values(countries);
 
   const [editableCustomer, setEditableCustomer] = useState<EditableCustomer>({
-    name: '',
+    id: undefined,
     email: '',
-    phone: '',
+    first_name: null,
+    last_name: null,
+    phone: null,
+    tags: [],
     shipping_address: {
-      address: '',
-      city: '',
-      state: '',
-      zipCode: '',
-      country: ''
+      address1: null,
+      address2: null,
+      city: null,
+      company: null,
+      country: null,
+      country_code: null,
+      first_name: null,
+      last_name: null,
+      latitude: null,
+      longitude: null,
+      name: null,
+      phone: null,
+      province: null,
+      province_code: null,
+      zip: null,
     },
     billing_address: {
-      address: '',
-      city: '',
-      state: '',
-      zipCode: '',
-      country: ''
+      address1: null,
+      address2: null,
+      city: null,
+      company: null,
+      country: null,
+      country_code: null,
+      first_name: null,
+      last_name: null,
+      name: null,
+      phone: null,
+      province: null,
+      province_code: null,
+      zip: null,
     }
   });
 
   const [isEditingNotes, setIsEditingNotes] = useState(false);
+
+  // Add new state for the current tag input
+  const [currentTagInput, setCurrentTagInput] = useState('');
+
+  const [billingSameAsShipping, setBillingSameAsShipping] = useState(false);
+
+  const [isShippingCollapsed, setIsShippingCollapsed] = useState(true);
+  const [isBillingCollapsed, setIsBillingCollapsed] = useState(true);
+
+  const [isBillingAddressOpen, setIsBillingAddressOpen] = useState(false);
+
+  // Add function to handle tag input
+  const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && currentTagInput.trim()) {
+      e.preventDefault();
+      setEditableCustomer(prev => ({
+        ...prev,
+        tags: [...prev.tags, currentTagInput.trim()]
+      }));
+      setCurrentTagInput('');
+    }
+  };
+
+  // Add function to remove a tag
+  const removeTag = (tagToRemove: string) => {
+    setEditableCustomer(prev => ({
+      ...prev,
+      tags: prev.tags.filter(tag => tag !== tagToRemove)
+    }));
+  };
 
   useEffect(() => {
     const fetchOrder = async () => {
@@ -196,13 +328,12 @@ export default function OrderDetail() {
       try {
         const response = await axios.get(`/api/shopify/orders/${params!.id}`);
         const shopifyOrder = response.data.order;
-        console.log(shopifyOrder, " : Shopify Order response");
+        console.log(shopifyOrder.note, " : shopitfyorder note");
+
 
         if (!shopifyOrder) {
           throw new Error('Order data not found in API response');
         }
-
-        console.log(shopifyOrder, " : Shopify Order response");
 
         const formatCurrency = (amount: string | number | undefined | null, currencyCode: string): string => {
           if (amount === undefined || amount === null) amount = 0;
@@ -250,22 +381,25 @@ export default function OrderDetail() {
           })),
           subtotal: formatCurrency(shopifyOrder.subtotal_price, currencyCode),
           taxes: formatCurrency(shopifyOrder.total_tax, currencyCode),
-          // Extract and format shipping cost (check API response structure for the correct field)
-          shipping_cost: formatCurrency(shopifyOrder.total_shipping_price_set?.shop_money?.amount, currencyCode), // << MODIFIED/ADDED
+          shipping_cost: formatCurrency(shopifyOrder.total_shipping_price_set?.shop_money?.amount, currencyCode),
           total: formatCurrency(shopifyOrder.total_price, currencyCode),
           paid: formatCurrency(paidAmount, currencyCode),
           balance: formatCurrency(balanceAmount, currencyCode),
-          // Delivery method might be in shipping lines
           delivery_method: shopifyOrder.shipping_lines?.[0]?.title || 'Shipping',
           notes: shopifyOrder.note || null,
           customer: {
             admin_graphql_api_id: shopifyOrder.customer?.admin_graphql_api_id || '',
             email: shopifyOrder.customer?.email || '',
-            phone: shopifyOrder.customer?.phone || null,
             first_name: shopifyOrder.customer?.first_name || null,
             last_name: shopifyOrder.customer?.last_name || null,
             note: shopifyOrder.customer?.note || null,
-            tags: shopifyOrder.customer?.tags || '',
+            tags: shopifyOrder.customer?.tags
+              ? (Array.isArray(shopifyOrder.customer.tags)
+                ? shopifyOrder.customer.tags
+                : (typeof shopifyOrder.customer.tags === 'string'
+                  ? shopifyOrder.customer.tags.split(',').map((tag: string) => tag.trim())
+                  : []))
+              : [],
             verified_email: shopifyOrder.customer?.verified_email || false,
             created_at: shopifyOrder.customer?.created_at || '',
             updated_at: shopifyOrder.customer?.updated_at || '',
@@ -280,33 +414,53 @@ export default function OrderDetail() {
             },
             tax_exempt: shopifyOrder.customer?.tax_exempt || false,
             tax_exemptions: shopifyOrder.customer?.tax_exemptions || [],
-            multipass_identifier: shopifyOrder.customer?.multipass_identifier || null
+            multipass_identifier: shopifyOrder.customer?.multipass_identifier || null,
+            phone: shopifyOrder.customer?.phone || null,
           },
           shipping_address: {
-            address: shopifyOrder.shipping_address?.address1 || null,
+            address1: shopifyOrder.shipping_address?.address1 || null,
+            address2: shopifyOrder.shipping_address?.address2 || null,
             city: shopifyOrder.shipping_address?.city || null,
-            state: shopifyOrder.shipping_address?.province_code || null,
-            zipCode: shopifyOrder.shipping_address?.zip || null,
-            country: shopifyOrder.shipping_address?.country || null, // Use 'country' field
+            company: shopifyOrder.shipping_address?.company || null,
+            country: shopifyOrder.shipping_address?.country || null,
+            country_code: shopifyOrder.shipping_address?.country_code || null,
+            first_name: shopifyOrder.shipping_address?.first_name || null,
+            last_name: shopifyOrder.shipping_address?.last_name || null,
+            latitude: shopifyOrder.shipping_address?.latitude || null,
+            longitude: shopifyOrder.shipping_address?.longitude || null,
+            name: shopifyOrder.shipping_address?.name || null,
+            phone: shopifyOrder.shipping_address?.phone || null,
+            province: shopifyOrder.shipping_address?.province || null,
+            province_code: shopifyOrder.shipping_address?.province_code || null,
+            zip: shopifyOrder.shipping_address?.zip || null,
           },
-          // Map billing address
           billing_address: {
-            address: shopifyOrder.billing_address?.address1 || null,
+            address1: shopifyOrder.billing_address?.address1 || null,
+            address2: shopifyOrder.billing_address?.address2 || null,
             city: shopifyOrder.billing_address?.city || null,
-            state: shopifyOrder.billing_address?.province_code || null,
-            zipCode: shopifyOrder.billing_address?.zip || null,
+            company: shopifyOrder.billing_address?.company || null,
             country: shopifyOrder.billing_address?.country || null,
+            country_code: shopifyOrder.billing_address?.country_code || null,
+            first_name: shopifyOrder.billing_address?.first_name || null,
+            last_name: shopifyOrder.billing_address?.last_name || null,
+            name: shopifyOrder.billing_address?.name || null,
+            phone: shopifyOrder.billing_address?.phone || null,
+            province: shopifyOrder.billing_address?.province || null,
+            province_code: shopifyOrder.billing_address?.province_code || null,
+            zip: shopifyOrder.billing_address?.zip || null,
           },
-          // Initialize placeholders - these need separate implementation
           timeline: [],
-          conversion_summary: null, // Needs specific data/logic
-          order_risk: null, // Needs specific data/logic (Order Risk API)
-          tags: shopifyOrder.tags ? shopifyOrder.tags.split(',').map((t: string) => t.trim()) : [],
+          conversion_summary: null,
+          order_risk: null,
+          tags: Array.isArray(shopifyOrder.tags)
+            ? shopifyOrder.tags
+            : (shopifyOrder.tags
+              ? (shopifyOrder.tags as string).split(',').map((tag: string) => tag.trim())
+              : []),
         });
 
-        // Initialize selectedStatus and editableNotes
         setSelectedStatus(currentFulfillmentStatus);
-        setEditableNotes(shopifyOrder.note || ''); // Initialize with fetched notes or empty string
+        setEditableNotes(shopifyOrder.note || '');
 
       } catch (err: any) {
         console.error("Failed to fetch order:", err);
@@ -316,7 +470,7 @@ export default function OrderDetail() {
       }
     };
 
-    if (params?.id) { // Ensure ID exists before fetching
+    if (params?.id) {
       fetchOrder();
     } else {
       setError('Order ID is missing.');
@@ -324,26 +478,50 @@ export default function OrderDetail() {
     }
   }, [params?.id]);
 
-  // Add useEffect to initialize editableCustomer when order data is loaded
   useEffect(() => {
     if (order.customer) {
       setEditableCustomer({
-        name: `${order.customer.first_name || ''} ${order.customer.last_name || ''}`.trim() || 'No customer',
+        id: order.customer.id?.toString(),
         email: order.customer.email || '',
-        phone: order.customer.phone || '',
+        first_name: order.customer.first_name || null,
+        last_name: order.customer.last_name || null,
+        phone: order.customer.phone || null,
+        tags: Array.isArray(order.customer.tags)
+          ? order.customer.tags
+          : (order.customer.tags
+            ? (order.customer.tags as string).split(',').map((tag: string) => tag.trim())
+            : []),
         shipping_address: {
-          address: order.shipping_address.address || '',
-          city: order.shipping_address.city || '',
-          state: order.shipping_address.state || '',
-          zipCode: order.shipping_address.zipCode || '',
-          country: order.shipping_address.country || ''
+          address1: order.shipping_address.address1 || null,
+          address2: order.shipping_address.address2 || null,
+          city: order.shipping_address.city || null,
+          company: order.shipping_address.company || null,
+          country: order.shipping_address.country || null,
+          country_code: order.shipping_address.country_code || null,
+          first_name: order.shipping_address.first_name || null,
+          last_name: order.shipping_address.last_name || null,
+          latitude: order.shipping_address.latitude || null,
+          longitude: order.shipping_address.longitude || null,
+          name: order.shipping_address.name || null,
+          phone: order.shipping_address.phone || null,
+          province: order.shipping_address.province || null,
+          province_code: order.shipping_address.province_code || null,
+          zip: order.shipping_address.zip || null,
         },
         billing_address: {
-          address: order.billing_address.address || '',
-          city: order.billing_address.city || '',
-          state: order.billing_address.state || '',
-          zipCode: order.billing_address.zipCode || '',
-          country: order.billing_address.country || ''
+          address1: order.billing_address.address1 || null,
+          address2: order.billing_address.address2 || null,
+          city: order.billing_address.city || null,
+          company: order.billing_address.company || null,
+          country: order.billing_address.country || null,
+          country_code: order.billing_address.country_code || null,
+          first_name: order.billing_address.first_name || null,
+          last_name: order.billing_address.last_name || null,
+          name: order.billing_address.name || null,
+          phone: order.billing_address.phone || null,
+          province: order.billing_address.province || null,
+          province_code: order.billing_address.province_code || null,
+          zip: order.billing_address.zip || null,
         }
       });
     }
@@ -355,7 +533,7 @@ export default function OrderDetail() {
 
     try {
       // First update Shopify via API
-      const shopifyResponse = await axios.post(`/api/shopify/sync`, {
+      const shopifyResponse = await axios.post(`/api/shopify/customer_update`, {
         orderId: params!.id,
         action: 'update_status',
         status: selectedStatus
@@ -387,9 +565,9 @@ export default function OrderDetail() {
   };
 
   const handleNotesUpdate = async () => {
+
     if (editableNotes === order.notes) {
       setUpdateMessage({ type: 'info', message: 'Notes have not changed.' });
-      setTimeout(() => setUpdateMessage({ type: '', message: '' }), 3000);
       return;
     }
 
@@ -397,28 +575,25 @@ export default function OrderDetail() {
     setUpdateMessage({ type: '', message: '' });
 
     try {
-      // Update Shopify via API
-      await axios.post(`/api/shopify/sync`, {
-        orderId: params!.id,
-        action: 'update_notes',
-        notes: editableNotes
-      });
+      const requestData = {
+        order: {
+          id: params!.id,
+          note: editableNotes || null
+        }
+      };
 
-      // Update database
-      await axios.put(`/api/orders/${params!.id}`, {
-        notes: editableNotes,
-        shopify_order_id: params!.id
-      });
+      console.log('Sending request data:', requestData);
 
-      // Update local state
+      await axios.put(`/api/shopify/orders/${params!.id}`, requestData);
+
       setOrder(prev => ({ ...prev, notes: editableNotes }));
-
       setUpdateMessage({
         type: 'success',
         message: 'Order notes updated successfully'
       });
     } catch (error: any) {
       console.error('Failed to update notes:', error);
+      console.error('Error response:', error.response?.data);
       setUpdateMessage({
         type: 'error',
         message: error.response?.data?.message || 'Failed to update order notes'
@@ -440,7 +615,6 @@ export default function OrderDetail() {
         message: response.data.message || 'Order synchronized with WMS successfully'
       });
 
-      // Update local state with WMS status if needed
       setOrder(prev => ({
         ...prev,
         wmsStatus: response.data.wms_status
@@ -456,35 +630,54 @@ export default function OrderDetail() {
     }
   };
 
-  // Add function to handle customer updates
   const handleCustomerUpdate = async () => {
     setIsUpdating(true);
     setUpdateMessage({ type: '', message: '' });
 
     try {
-      // First update Shopify via API
-      await axios.post(`/api/shopify/sync`, {
-        orderId: params!.id,
-        action: 'update_customer',
-        customer: {
-          name: editableCustomer.name,
-          email: editableCustomer.email,
-          phone: editableCustomer.phone,
-          shipping_address: editableCustomer.shipping_address,
-          billing_address: editableCustomer.billing_address
+      // Update the database through backend API
+      await axios.put(`/api/shopify/orders/${params!.id}`, {
+        order: {
+          customer: {
+            ...order.customer,
+            ...editableCustomer,
+            tags: editableCustomer.tags.join(','),
+            first_name: editableCustomer.shipping_address.first_name,
+            last_name: editableCustomer.shipping_address.last_name,
+          },
+          shipping_address: {
+            first_name: editableCustomer.shipping_address.first_name,
+            last_name: editableCustomer.shipping_address.last_name,
+            address1: editableCustomer.shipping_address.address1,
+            address2: editableCustomer.shipping_address.address2,
+            city: editableCustomer.shipping_address.city,
+            province: editableCustomer.shipping_address.province,
+            province_code: editableCustomer.shipping_address.province_code,
+            country: editableCustomer.shipping_address.country,
+            country_code: editableCustomer.shipping_address.country_code,
+            zip: editableCustomer.shipping_address.zip,
+            phone: editableCustomer.shipping_address.phone,
+            company: editableCustomer.shipping_address.company,
+            name: editableCustomer.shipping_address.name
+          },
+          billing_address: {
+            first_name: editableCustomer.first_name,
+            last_name: editableCustomer.last_name,
+            address1: editableCustomer.billing_address.address1,
+            address2: editableCustomer.billing_address.address2,
+            city: editableCustomer.billing_address.city,
+            province: editableCustomer.billing_address.province,
+            province_code: editableCustomer.billing_address.province_code,
+            country: editableCustomer.billing_address.country,
+            country_code: editableCustomer.billing_address.country_code,
+            zip: editableCustomer.billing_address.zip,
+            phone: editableCustomer.billing_address.phone,
+            company: editableCustomer.billing_address.company,
+            name: editableCustomer.first_name && editableCustomer.last_name
+              ? `${editableCustomer.first_name} ${editableCustomer.last_name}`
+              : null
+          }
         }
-      });
-
-      // Then update the database
-      await axios.put(`/api/orders/${params!.id}`, {
-        customer: {
-          name: editableCustomer.name,
-          email: editableCustomer.email,
-          phone: editableCustomer.phone
-        },
-        shipping_address: editableCustomer.shipping_address,
-        billing_address: editableCustomer.billing_address,
-        shopify_order_id: params!.id
       });
 
       // Update local state
@@ -492,11 +685,21 @@ export default function OrderDetail() {
         ...prev,
         customer: {
           ...prev.customer,
-          name: editableCustomer.name,
+          first_name: editableCustomer.first_name,
+          last_name: editableCustomer.last_name,
           email: editableCustomer.email,
-          phone: editableCustomer.phone
+          phone: editableCustomer.shipping_address.phone,
+          tags: editableCustomer.tags,
         },
-        shipping_address: editableCustomer.shipping_address,
+        shipping_address: {
+          ...editableCustomer.shipping_address,
+          latitude: editableCustomer.shipping_address.latitude
+            ? Number(editableCustomer.shipping_address.latitude)
+            : null,
+          longitude: editableCustomer.shipping_address.longitude
+            ? Number(editableCustomer.shipping_address.longitude)
+            : null,
+        },
         billing_address: editableCustomer.billing_address
       }));
 
@@ -524,7 +727,6 @@ export default function OrderDetail() {
     );
   }
 
-  // Helper function to render status badges (Example)
   const renderStatusBadge = (text: string, color: 'yellow' | 'green' | 'blue' | 'gray') => {
     const colorClasses = {
       yellow: 'bg-yellow-100 text-yellow-800',
@@ -538,7 +740,6 @@ export default function OrderDetail() {
 
   return (
     <div className="min-h-screen bg-gray-100">
-      {/* Header remains the same */}
       <header className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
           <div className="flex items-center">
@@ -555,21 +756,17 @@ export default function OrderDetail() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="max-w-[1520px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Order Header Section (Updated) */}
         <div className="mb-6">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-center space-x-3">
               <h2 className="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">
                 {order.order_number}
               </h2>
-              {/* Payment Status Badge */}
               {order.payment_status && renderStatusBadge(
                 order.payment_status === 'pending' ? 'Payment pending' : order.payment_status,
                 order.payment_status === 'paid' ? 'green' : 'yellow' // Adjust logic as needed
               )}
-              {/* Fulfillment Status Badge */}
               {renderStatusBadge(
                 order.fulfillment_status || 'Unfulfilled',
                 order.fulfillment_status === 'fulfilled' ? 'green' : 'yellow'
@@ -585,19 +782,16 @@ export default function OrderDetail() {
 
           <div className="lg:col-span-2 space-y-6">
 
-            {/* Unfulfilled Items Card */}
             <div className="bg-white shadow overflow-hidden sm:rounded-lg">
               <div className="px-4 py-4 sm:px-6 border-b border-gray-200">
                 <h3 className="text-base font-semibold leading-6 text-gray-900">
-                  Unfulfilled ({order.items.length}) {/* Total items count since fulfillment status not tracked yet */}
+                  Unfulfilled ({order.items.length})
                 </h3>
               </div>
               <div className="p-4 sm:p-6 space-y-4">
                 <p className="text-sm text-gray-500">Delivery method: {order.delivery_method}</p>
-                {/* Item List */}
                 {order.items.map((item) => (
                   <div key={item.id} className="flex items-center space-x-4">
-                    {/* Item Image Placeholder */}
                     <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center">
                       {item.image_url ? (
                         <img src={item.image_url} alt={item.name} className="h-full w-full object-cover rounded" />
@@ -615,19 +809,11 @@ export default function OrderDetail() {
                     <div className="text-sm font-medium text-gray-900">{item.total}</div>
                   </div>
                 ))}
-                {/* Fulfill Button */}
-                {/* <div className="flex justify-end pt-4">
-                  <button className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700">
-                    Fulfill items
-                  </button>
-                </div> */}
               </div>
             </div>
 
-            {/* Payment Summary Card */}
             <div className="bg-white shadow overflow-hidden sm:rounded-lg">
               <div className="px-4 py-4 sm:px-6 border-b border-gray-200">
-                {/* Payment Status Badge */}
                 {order.payment_status && renderStatusBadge(
                   order.payment_status === 'pending' ? 'Payment pending' : order.payment_status,
                   order.payment_status === 'paid' ? 'green' : 'yellow' // Adjust logic as needed
@@ -664,49 +850,11 @@ export default function OrderDetail() {
                   <span className="text-gray-900">Balance</span>
                   <span className="text-gray-900">{order.balance}</span>
                 </div>
-                {/* Action Buttons */}
-                {/* <div className="flex justify-end space-x-2 pt-4">
-                  <button className="px-3 py-1 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">Send invoice</button>
-                  <button className="px-3 py-1 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-gray-800 hover:bg-gray-900">Mark as paid</button>
-                </div> */}
               </div>
             </div>
 
-            {/* Timeline Card */}
-            {/* <div className="bg-white shadow overflow-hidden sm:rounded-lg">
-              <div className="px-4 py-4 sm:px-6 border-b border-gray-200">
-                <h3 className="text-base font-semibold leading-6 text-gray-900">Timeline</h3>
-              </div> */}
-            {/* <div className="p-4 sm:p-6">
-                <div className="flex items-start space-x-3">
-                  <div className="flex-shrink-0 w-8 h-8 bg-gray-300 rounded-full flex items-center justify-center text-sm font-medium text-gray-600">IM</div> Placeholder Initials */}
-            {/* <div className="min-w-0 flex-1">
-                    <textarea
-                      rows={3}
-                      className="block w-full border border-gray-300 rounded-md shadow-sm sm:text-sm p-2 focus:ring-indigo-500 focus:border-indigo-500"
-                      placeholder="Leave a comment..."
-                      value={editableNotes || ''}
-                      onChange={(e) => setEditableNotes(e.target.value)}
-                    />
-                    <div className="mt-2 flex justify-between items-center">
-                      <div></div>
-                      <button
-                        onClick={handleNotesUpdate}
-                        disabled={isUpdating}
-                        className="px-3 py-1 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
-                      >
-                        {isUpdating ? 'Posting...' : 'Post'}
-                      </button>
-                    </div>
-                  </div> */}
-            {/* </div>
-                <p className="mt-4 text-center text-xs text-gray-500">Only you and other staff can see comments</p>
-              </div> */}
-            {/* </div> */}
+          </div>
 
-          </div> {/* End Left Column */}
-
-          {/* Right Column (Sidebar) */}
           <div className="lg:col-span-1 space-y-6">
 
             <div className="bg-white shadow overflow-hidden sm:rounded-lg">
@@ -734,7 +882,7 @@ export default function OrderDetail() {
                         className="px-3 py-1 bg-indigo-600 text-white rounded"
                         onClick={async () => {
                           await handleNotesUpdate();
-                          await handleStatusUpdate();
+                          // await handleStatusUpdate();
                           setIsEditingNotes(false);
                         }}
                         disabled={isUpdating}
@@ -763,7 +911,6 @@ export default function OrderDetail() {
                 <button
                   onClick={async () => {
                     await handleCustomerUpdate();
-                    await handleStatusUpdate();
                   }}
                   disabled={isUpdating}
                   className="text-indigo-600 hover:text-indigo-900 text-sm font-medium disabled:opacity-50"
@@ -772,18 +919,7 @@ export default function OrderDetail() {
                 </button>
               </div>
               <div className="p-4 sm:p-6 space-y-4">
-                {/* Customer Name */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700">Name</label>
-                  <input
-                    type="text"
-                    value={editableCustomer.name}
-                    onChange={(e) => setEditableCustomer(prev => ({ ...prev, name: e.target.value }))}
-                    className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
-                  />
-                </div>
-                {/* Contact Info */}
-                <div className="border-t pt-4">
+                <div className="">
                   <h4 className="text-sm font-medium text-gray-900 mb-2">Contact information</h4>
                   <div className="space-y-2">
                     <div>
@@ -797,97 +933,225 @@ export default function OrderDetail() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700">Phone</label>
-                      <input
-                        type="tel"
-                        value={editableCustomer.phone}
-                        onChange={(e) => setEditableCustomer(prev => ({ ...prev, phone: e.target.value }))}
-                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                      <PhoneInput
+                        international
+                        defaultCountry="US"
+                        value={editableCustomer.shipping_address.phone || ''}
+                        onChange={(value: string) =>
+                          setEditableCustomer(prev => ({
+                            ...prev,
+                            shipping_address: { ...prev.shipping_address, phone: value || '' }
+                          }))
+                        }
+                        className="mt-1 text-black outline-none block w-full border border-gray-300 rounded-md shadow-sm p-2"
                       />
                     </div>
                   </div>
                 </div>
-                {/* Shipping Address */}
                 <div className="border-t pt-4">
-                  <h4 className="text-sm font-medium text-gray-900 mb-2">Shipping address</h4>
-                  <div className="space-y-2">
+                  <div className="flex justify-between items-center mb-2">
+                    <h4 className="text-sm font-medium text-gray-900">Shipping address</h4>
+                    <button
+                      onClick={() => setIsShippingCollapsed(!isShippingCollapsed)}
+                      className="text-indigo-600 hover:text-indigo-900 text-sm font-medium"
+                    >
+                      {isShippingCollapsed ? 'Show' : 'Hide'}
+                    </button>
+                  </div>
+                  <div
+                    className={`space-y-4 transition-all duration-300 ease-in-out overflow-hidden ${isShippingCollapsed ? 'max-h-0 opacity-0' : 'max-h-[1000px] opacity-100'
+                      }`}
+                  >
                     <div>
-                      <label className="block text-sm font-medium text-gray-700">Address</label>
+                      <label className="block text-sm font-medium text-gray-700">Country/region</label>
+                      <select
+                        value={editableCustomer.shipping_address.country || ''}
+                        onChange={e => setEditableCustomer(prev => ({
+                          ...prev,
+                          shipping_address: { ...prev.shipping_address, country: e.target.value }
+                        }))}
+                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 text-black"
+                      >
+                        <option className='text-black' value="">Select country</option>
+                        {countryArray.map((country) => (
+                          <option className='text-black' key={country} value={country}>{country}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">First name</label>
+                        <input
+                          type="text"
+                          value={editableCustomer.shipping_address.first_name || ''}
+                          onChange={e => setEditableCustomer(prev => ({
+                            ...prev,
+                            shipping_address: { ...prev.shipping_address, first_name: e.target.value }
+                          }))}
+                          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Last name</label>
+                        <input
+                          type="text"
+                          value={editableCustomer.shipping_address.last_name || ''}
+                          onChange={e => setEditableCustomer(prev => ({
+                            ...prev,
+                            shipping_address: { ...prev.shipping_address, last_name: e.target.value }
+                          }))}
+                          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Company</label>
                       <input
                         type="text"
-                        value={editableCustomer.shipping_address.address}
-                        onChange={(e) => setEditableCustomer(prev => ({
+                        value={editableCustomer.shipping_address.company || ''}
+                        onChange={e => setEditableCustomer(prev => ({
                           ...prev,
-                          shipping_address: { ...prev.shipping_address, address: e.target.value }
+                          shipping_address: { ...prev.shipping_address, company: e.target.value }
                         }))}
                         className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
+                        <label className="block text-sm font-medium text-gray-700">Postal code</label>
+                        <input
+                          type="text"
+                          value={editableCustomer.shipping_address.zip || ''}
+                          onChange={e => setEditableCustomer(prev => ({
+                            ...prev,
+                            shipping_address: { ...prev.shipping_address, zip: e.target.value }
+                          }))}
+                          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                        />
+                      </div>
+                      {/* <div>
+                        <label className="block text-sm font-medium text-gray-700">Prefecture</label>
+                        <select
+                          value={editableCustomer.shipping_address.province || ''}
+                          onChange={e => setEditableCustomer(prev => ({
+                            ...prev,
+                            shipping_address: { ...prev.shipping_address, province: e.target.value }
+                          }))}
+                          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                        >
+                          <option value="">Select prefecture</option>
+                          <option value="Shizuoka">Shizuoka</option>
+                        </select>
+                      </div> */}
+                      <div>
                         <label className="block text-sm font-medium text-gray-700">City</label>
                         <input
                           type="text"
-                          value={editableCustomer.shipping_address.city}
-                          onChange={(e) => setEditableCustomer(prev => ({
+                          value={editableCustomer.shipping_address.city || ''}
+                          onChange={e => setEditableCustomer(prev => ({
                             ...prev,
                             shipping_address: { ...prev.shipping_address, city: e.target.value }
                           }))}
                           className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
                         />
                       </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">State</label>
-                        <input
-                          type="text"
-                          value={editableCustomer.shipping_address.state}
-                          onChange={(e) => setEditableCustomer(prev => ({
-                            ...prev,
-                            shipping_address: { ...prev.shipping_address, state: e.target.value }
-                          }))}
-                          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
-                        />
-                      </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">ZIP Code</label>
-                        <input
-                          type="text"
-                          value={editableCustomer.shipping_address.zipCode}
-                          onChange={(e) => setEditableCustomer(prev => ({
-                            ...prev,
-                            shipping_address: { ...prev.shipping_address, zipCode: e.target.value }
-                          }))}
-                          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">Country</label>
-                        <input
-                          type="text"
-                          value={editableCustomer.shipping_address.country}
-                          onChange={(e) => setEditableCustomer(prev => ({
-                            ...prev,
-                            shipping_address: { ...prev.shipping_address, country: e.target.value }
-                          }))}
-                          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
-                        />
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Address</label>
+                      <input
+                        type="text"
+                        value={editableCustomer.shipping_address.address1 || ''}
+                        onChange={e => setEditableCustomer(prev => ({
+                          ...prev,
+                          shipping_address: { ...prev.shipping_address, address1: e.target.value }
+                        }))}
+                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Apartment, suite, etc</label>
+                      <input
+                        type="text"
+                        value={editableCustomer.shipping_address.address2 || ''}
+                        onChange={e => setEditableCustomer(prev => ({
+                          ...prev,
+                          shipping_address: { ...prev.shipping_address, address2: e.target.value }
+                        }))}
+                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                      />
+                    </div>
+
+                  </div>
+                </div>
+                {/* <div className="border-t pt-4">
+                  <h4 className="text-sm font-medium text-gray-900 mb-2">Tags</h4>
+                  <div className="space-y-2">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700">Customer Tags</label>
+                      <input
+                        type="text"
+                        value={currentTagInput}
+                        onChange={(e) => setCurrentTagInput(e.target.value)}
+                        onKeyDown={handleTagKeyDown}
+                        placeholder="Type a tag and press Enter"
+                        className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                      />
+                      <p className="mt-1 text-xs text-gray-500">Press Enter to add a tag</p>
+                      <div className="flex flex-wrap gap-2 mb-2">
+                        {editableCustomer.tags.map((tag, index) => (
+                          <div
+                            key={index}
+                            className="inline-flex items-center px-2 py-1 rounded-full text-sm bg-indigo-100 text-indigo-700"
+                          >
+                            {tag}
+                            <button
+                              type="button"
+                              onClick={() => removeTag(tag)}
+                              className="ml-1 text-indigo-500 hover:text-indigo-700"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>
-                </div>
-                {order.billing_address.address && (
+                </div> */}
+                {order.billing_address.address1 && (
                   <div className="border-t pt-4">
-                    <h4 className="text-sm font-medium text-gray-900 mb-2">Billing address</h4>
-                    <div className="space-y-2">
+                    <div className="flex justify-between items-center mb-2">
+                      <h4 className="text-sm font-medium text-gray-900">Billing address</h4>
+                      <button
+                        onClick={() => setIsBillingCollapsed(!isBillingCollapsed)}
+                        className="text-indigo-600 hover:text-indigo-900 text-sm font-medium"
+                      >
+                        {isBillingCollapsed ? 'Show' : 'Hide'}
+                      </button>
+                    </div>
+                    <div
+                      className={`space-y-2 transition-all duration-300 ease-in-out overflow-hidden ${isBillingCollapsed ? 'max-h-0 opacity-0' : 'max-h-[1000px] opacity-100'
+                        }`}
+                    >
                       <div>
                         <label className="block text-sm font-medium text-gray-700">Address</label>
                         <input
                           type="text"
-                          value={editableCustomer.billing_address.address}
+                          value={editableCustomer.billing_address.address1 || ''}
                           onChange={(e) => setEditableCustomer(prev => ({
                             ...prev,
-                            billing_address: { ...prev.billing_address, address: e.target.value }
+                            billing_address: { ...prev.billing_address, address1: e.target.value || null }
+                          }))}
+                          className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Address 2</label>
+                        <input
+                          type="text"
+                          value={editableCustomer.billing_address.address2 || ''}
+                          onChange={(e) => setEditableCustomer(prev => ({
+                            ...prev,
+                            billing_address: { ...prev.billing_address, address2: e.target.value || null }
                           }))}
                           className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
                         />
@@ -897,10 +1161,10 @@ export default function OrderDetail() {
                           <label className="block text-sm font-medium text-gray-700">City</label>
                           <input
                             type="text"
-                            value={editableCustomer.billing_address.city}
+                            value={editableCustomer.billing_address.city || ''}
                             onChange={(e) => setEditableCustomer(prev => ({
                               ...prev,
-                              billing_address: { ...prev.billing_address, city: e.target.value }
+                              billing_address: { ...prev.billing_address, city: e.target.value || null }
                             }))}
                             className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
                           />
@@ -909,10 +1173,10 @@ export default function OrderDetail() {
                           <label className="block text-sm font-medium text-gray-700">State</label>
                           <input
                             type="text"
-                            value={editableCustomer.billing_address.state}
+                            value={editableCustomer.billing_address.province || ''}
                             onChange={(e) => setEditableCustomer(prev => ({
                               ...prev,
-                              billing_address: { ...prev.billing_address, state: e.target.value }
+                              billing_address: { ...prev.billing_address, province: e.target.value || null }
                             }))}
                             className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
                           />
@@ -920,13 +1184,13 @@ export default function OrderDetail() {
                       </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div>
-                          <label className="block text-sm font-medium text-gray-700">ZIP Code</label>
+                          <label className="block text-sm font-medium text-gray-700">Zip Code</label>
                           <input
                             type="text"
-                            value={editableCustomer.billing_address.zipCode}
+                            value={editableCustomer.billing_address.zip || ''}
                             onChange={(e) => setEditableCustomer(prev => ({
                               ...prev,
-                              billing_address: { ...prev.billing_address, zipCode: e.target.value }
+                              billing_address: { ...prev.billing_address, zip: e.target.value || null }
                             }))}
                             className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
                           />
@@ -935,14 +1199,29 @@ export default function OrderDetail() {
                           <label className="block text-sm font-medium text-gray-700">Country</label>
                           <input
                             type="text"
-                            value={editableCustomer.billing_address.country}
+                            value={editableCustomer.billing_address.country || ''}
                             onChange={(e) => setEditableCustomer(prev => ({
                               ...prev,
-                              billing_address: { ...prev.billing_address, country: e.target.value }
+                              billing_address: { ...prev.billing_address, country: e.target.value || null }
                             }))}
                             className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
                           />
                         </div>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Phone</label>
+                        <PhoneInput
+                          international
+                          defaultCountry="US"
+                          value={editableCustomer.billing_address.phone || ''}
+                          onChange={(value: string) =>
+                            setEditableCustomer(prev => ({
+                              ...prev,
+                              billing_address: { ...prev.billing_address, phone: value || '' }
+                            }))
+                          }
+                          className="mt-1 text-black outline-none block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                        />
                       </div>
                     </div>
                   </div>
@@ -952,6 +1231,7 @@ export default function OrderDetail() {
           </div>
 
         </div>
+
       </main>
     </div>
   );

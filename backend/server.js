@@ -30,11 +30,6 @@ mongoose.connect(process.env.MONGODB_URI, {
   console.error("MongoDB connection error:", err);
 });
 
-// Example route
-app.get("/api/health", (req, res) => {
-  res.json({ status: "Backend is running" });
-});
-
 // Import routes
 import authRoutes from "./routes/auth.js";
 import orderRoutes from "./routes/orders.js";
