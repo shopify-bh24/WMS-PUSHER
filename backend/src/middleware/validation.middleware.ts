@@ -9,7 +9,7 @@ export const validateLogin = (
     next: NextFunction
 ): void => {
     try {
-        const { username, password } = req.body;
+        const { password } = req.body;
 
         validateRequiredFields(req.body, ['username', 'password']);
 
