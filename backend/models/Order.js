@@ -115,7 +115,6 @@ const customerSchema = new mongoose.Schema({
   verified_email: Boolean
 }, { _id: false });
 
-// Main Order schema
 const orderSchema = new mongoose.Schema({
   shopifyId: { type: Number, required: true, unique: true },
   orderNumber: { type: String, required: true },
@@ -123,8 +122,8 @@ const orderSchema = new mongoose.Schema({
   customer: customerSchema,
   lineItems: [lineItemSchema],
   shippingLines: [shippingLineSchema],
-  shippingAddress: addressSchema,
-  billingAddress: addressSchema,
+  shipping_address: addressSchema,
+  billing_address: addressSchema,
   financialStatus: String,
   fulfillmentStatus: String,
   currency: String,

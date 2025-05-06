@@ -7,42 +7,39 @@ import axios from 'axios';
 import { getNames } from 'country-list';
 import dynamic from 'next/dynamic';
 import 'react-phone-number-input/style.css';
-// import { E164Number } from 'libphonenumber-js';
 
-// Import PhoneInput with dynamic import
 const PhoneInput = dynamic(
   () => import('react-phone-number-input').then(mod => mod.default),
   { ssr: false }
 );
 
-// Define a more detailed type for the order state
 interface OrderItem {
   id: string | number;
   name: string;
   sku: string;
   quantity: number;
-  price: string; // Formatted price with currency
-  total: string; // Formatted total with currency
-  image_url?: string; // Add image URL if available
-  variant_title?: string; // e.g., "XS / S / Black"
+  price: string;
+  total: string;
+  image_url?: string;
+  variant_title?: string;
 }
 
 interface OrderState {
   id: string;
-  order_number: string; // Shopify order number like #1001
+  order_number: string;
   created_at: string;
-  source: string; // e.g., "from Draft Orders"
-  payment_status: string; // e.g., "Payment pending"
-  fulfillment_status: string | null; // e.g., "Unfulfilled"
-  currency: string; // e.g., "JPY"
+  source: string;
+  payment_status: string;
+  fulfillment_status: string | null;
+  currency: string;
   items: OrderItem[];
-  subtotal: string; // Formatted
+  subtotal: string;
   taxes: string;
   shipping_cost: string;
-  total: string; // Formatted
-  paid: string; // Formatted amount paid
-  balance: string; // Formatted balance due
-  delivery_method: string; // e.g., "Shipping"
+  total: string;
+  paid: string;
+  balance: string;
+  delivery_method: string;
   notes: string | null;
   customer: {
     id?: number;
@@ -101,12 +98,11 @@ interface OrderState {
     province_code: string | null;
     zip: string | null;
   };
-  // Placeholder for data not yet fetched/implemented
   timeline: any[];
   conversion_summary: any;
   order_risk: any;
   tags: string[];
-  wmsStatus?: string; // Add optional wmsStatus << ADDED
+  wmsStatus?: string;
 }
 
 interface EditableCustomer {
@@ -150,7 +146,6 @@ interface EditableCustomer {
   };
 }
 
-// Initial state structure matching the image more closely
 const initialOrderState: OrderState = {
   id: '',
   order_number: '',
@@ -245,7 +240,7 @@ export default function OrderDetail() {
   const [editableNotes, setEditableNotes] = useState<string | null>(null);
   const [updateMessage, setUpdateMessage] = useState({ type: '', message: '' });
   const [error, setError] = useState('');
-  const countries = getNames(); // returns an object: { 'US': 'United States', ... }
+  const countries = getNames();
   const countryArray: string[] = Object.values(countries);
 
   const [editableCustomer, setEditableCustomer] = useState<EditableCustomer>({
@@ -291,7 +286,6 @@ export default function OrderDetail() {
 
   const [isEditingNotes, setIsEditingNotes] = useState(false);
 
-  // Add new state for the current tag input
   const [currentTagInput, setCurrentTagInput] = useState('');
 
   const [billingSameAsShipping, setBillingSameAsShipping] = useState(false);
@@ -301,7 +295,6 @@ export default function OrderDetail() {
 
   const [isBillingAddressOpen, setIsBillingAddressOpen] = useState(false);
 
-  // Add function to handle tag input
   const handleTagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && currentTagInput.trim()) {
       e.preventDefault();
@@ -313,7 +306,6 @@ export default function OrderDetail() {
     }
   };
 
-  // Add function to remove a tag
   const removeTag = (tagToRemove: string) => {
     setEditableCustomer(prev => ({
       ...prev,
@@ -582,8 +574,6 @@ export default function OrderDetail() {
         }
       };
 
-      console.log('Sending request data:', requestData);
-
       await axios.put(`/api/shopify/orders/${params!.id}`, requestData);
 
       setOrder(prev => ({ ...prev, notes: editableNotes }));
@@ -635,15 +625,26 @@ export default function OrderDetail() {
     setUpdateMessage({ type: '', message: '' });
 
     try {
-      // Update the database through backend API
-      await axios.put(`/api/shopify/orders/${params!.id}`, {
+      const customerResponse = await axios.put(`/api/shopify/customers/${order.customer.admin_graphql_api_id.split('/').pop()}`, {
+        customer: {
+          email: editableCustomer.email,
+          first_name: editableCustomer.first_name,
+          last_name: editableCustomer.last_name,
+          phone: editableCustomer.phone,
+          tags: editableCustomer.tags.join(','),
+          state: "enabled"
+        }
+      });
+
+      const orderResponse = await axios.put(`/api/shopify/orders/${params!.id}`, {
         order: {
           customer: {
-            ...order.customer,
-            ...editableCustomer,
-            tags: editableCustomer.tags.join(','),
-            first_name: editableCustomer.shipping_address.first_name,
-            last_name: editableCustomer.shipping_address.last_name,
+            id: order.customer.admin_graphql_api_id.split('/').pop(),
+            email: editableCustomer.email,
+            first_name: editableCustomer.first_name,
+            last_name: editableCustomer.last_name,
+            phone: editableCustomer.phone,
+            tags: editableCustomer.tags.join(',')
           },
           shipping_address: {
             first_name: editableCustomer.shipping_address.first_name,
@@ -680,16 +681,19 @@ export default function OrderDetail() {
         }
       });
 
-      // Update local state
-      setOrder(prev => ({
+      console.log(customerResponse.data, "customer_response");
+      console.log(orderResponse.data, "order_response");
+
+      // Update local state after successful API calls
+      setOrder((prev: any) => ({
         ...prev,
         customer: {
-          ...prev.customer,
+          // ...prev.customer,
+          email: editableCustomer.email,
           first_name: editableCustomer.first_name,
           last_name: editableCustomer.last_name,
-          email: editableCustomer.email,
-          phone: editableCustomer.shipping_address.phone,
-          tags: editableCustomer.tags,
+          phone: editableCustomer.phone,
+          tags: editableCustomer.tags
         },
         shipping_address: {
           ...editableCustomer.shipping_address,
@@ -936,7 +940,12 @@ export default function OrderDetail() {
                       <PhoneInput
                         international
                         defaultCountry="US"
-                        value={editableCustomer.shipping_address.phone || ''}
+                        value={
+                          typeof editableCustomer.billing_address.phone === "string" &&
+                            /^\+\d{1,15}$/.test(editableCustomer.billing_address.phone.replace(/\s+/g, ""))
+                            ? editableCustomer.billing_address.phone.replace(/\s+/g, "")
+                            : undefined
+                        }
                         onChange={(value: string) =>
                           setEditableCustomer(prev => ({
                             ...prev,
@@ -1207,21 +1216,6 @@ export default function OrderDetail() {
                             className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
                           />
                         </div>
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">Phone</label>
-                        <PhoneInput
-                          international
-                          defaultCountry="US"
-                          value={editableCustomer.billing_address.phone || ''}
-                          onChange={(value: string) =>
-                            setEditableCustomer(prev => ({
-                              ...prev,
-                              billing_address: { ...prev.billing_address, phone: value || '' }
-                            }))
-                          }
-                          className="mt-1 text-black outline-none block w-full border border-gray-300 rounded-md shadow-sm p-2"
-                        />
                       </div>
                     </div>
                   </div>
