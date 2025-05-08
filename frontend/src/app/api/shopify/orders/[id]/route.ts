@@ -35,7 +35,7 @@ async function fetchOrderWithRetry(client: any, id: string, retryCount = 0): Pro
 }
 
 export async function GET(request: Request, { params }: RouteParams) {
-    const id = await Promise.resolve(params.id);
+    const { id } = params;
 
     if (!id) {
         return NextResponse.json({ success: false, error: 'Order ID is required' }, { status: 400 });
@@ -78,9 +78,9 @@ export async function GET(request: Request, { params }: RouteParams) {
     }
 }
 
-export async function PUT(request: Request, context: { params: { id: string } }) {
+export async function PUT(request: Request, { params }: RouteParams) {
     try {
-        const { id } = await Promise.resolve(context.params);
+        const { id } = params;
         const body = await request.json();
         console.log('Request body:', JSON.stringify(body, null, 2));
 
@@ -93,7 +93,6 @@ export async function PUT(request: Request, context: { params: { id: string } })
         }
 
         const client = await getShopifyRestClient();
-
 
         const shopifyResponse = await client.put({
             path: `orders/${id}`,

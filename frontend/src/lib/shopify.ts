@@ -83,8 +83,6 @@ export const getShopifyOrders = async () => {
     try {
         validateEnvVars();
         const client = await getShopifyRestClient();
-        console.log(`Using Shopify API Version: ${LATEST_API_VERSION}`);
-
         do {
             const query: { [key: string]: any } = {
                 status: 'any',
@@ -96,8 +94,6 @@ export const getShopifyOrders = async () => {
                 query.page_info = nextPageInfo;
             }
 
-            console.log(`Fetching orders page with params: ${JSON.stringify(query)}`);
-
             const response: any = await client.get({
                 path: 'orders',
                 query: query,
@@ -106,8 +102,6 @@ export const getShopifyOrders = async () => {
             const responseBody = response.body as { orders: any[] };
             const fetchedOrders = responseBody?.orders || [];
             allOrders = allOrders.concat(fetchedOrders);
-
-            console.log(`Fetched ${fetchedOrders.length} orders. Total fetched: ${allOrders.length}`);
 
             let linkHeaderValue: string | undefined | null = null;
             if (typeof response.headers?.get === 'function') {
@@ -118,11 +112,9 @@ export const getShopifyOrders = async () => {
             }
 
             nextPageInfo = getNextPageInfo(linkHeaderValue);
-            console.log(`Next page_info: ${nextPageInfo}`);
 
         } while (nextPageInfo);
 
-        console.log(`Finished fetching all orders. Total: ${allOrders.length}`);
         return allOrders;
     } catch (error: any) {
         console.error('Error fetching orders from Shopify:', error);

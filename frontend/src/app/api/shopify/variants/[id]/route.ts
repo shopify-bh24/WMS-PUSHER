@@ -6,8 +6,9 @@ export async function GET(
     { params }: { params: { id: string } }
 ) {
     try {
+        const { id } = params;
         const shopify = await getShopifyRestClient();
-        const variantRes = await shopify.get({ path: `variants/${params.id}` });
+        const variantRes = await shopify.get({ path: `variants/${id}` });
         const variant = variantRes.body.variant;
         if (!variant) throw new Error('Variant not found');
         const productRes = await shopify.get({ path: `products/${variant.product_id}` });

@@ -1464,9 +1464,7 @@ export default function OrderDetail() {
                         value={order.shipping_address.country || ''}
                         onChange={e => {
                           const selectedCountry = e.target.value;
-                          // Get country code based on selected country
                           const countryCode = getCountryCode(selectedCountry);
-
                           setOrder(prev => ({
                             ...prev,
                             shipping_address: {
@@ -1487,23 +1485,23 @@ export default function OrderDetail() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700">Phone</label>
-                        <PhoneInput
-                          international
-                          defaultCountry="US"
-                          value={
-                            typeof order.shipping_address.phone === "string" &&
-                              /^\+\d{1,15}$/.test(order.shipping_address.phone.replace(/\s+/g, ""))
-                              ? order.shipping_address.phone.replace(/\s+/g, "")
-                              : undefined
-                          }
-                          onChange={(value: string) =>
-                            setOrder(prev => ({
-                              ...prev,
-                              shipping_address: { ...prev.shipping_address, phone: value || '' }
-                            }))
-                          }
-                          className="mt-1 text-black outline-none block w-full border border-gray-300 rounded-md shadow-sm p-2 disabled:opacity-50"
-                        />
+                      <PhoneInput
+                        international
+                        defaultCountry="US"
+                        value={
+                          typeof order.shipping_address.phone === "string" &&
+                            /^\+\d{1,15}$/.test(order.shipping_address.phone.replace(/\s+/g, ""))
+                            ? order.shipping_address.phone.replace(/\s+/g, "")
+                            : undefined
+                        }
+                        onChange={(value: string) =>
+                          setOrder(prev => ({
+                            ...prev,
+                            shipping_address: { ...prev.shipping_address, phone: value || '' }
+                          }))
+                        }
+                        className="mt-1 text-black outline-none block w-full border border-gray-300 rounded-md shadow-sm p-2 disabled:opacity-50"
+                      />
                     </div>
                     <div className="grid grid-cols-2 gap-2">
                       <div>
