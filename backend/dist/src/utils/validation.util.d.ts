@@ -1,0 +1,9 @@
+export declare const validateEmail: (email: string) => boolean;
+export declare const validatePassword: (password: string) => boolean;
+export declare const validatePhoneNumber: (phone: string) => boolean;
+export declare const validateRequiredFields: (data: any, requiredFields: string[]) => void;
+export declare const validateNumericRange: (value: number, min: number, max: number) => boolean;
+export declare const validateStringLength: (str: string, min: number, max: number) => boolean;
+export declare const validateDateRange: (startDate: Date, endDate: Date) => boolean;
+export declare const sanitizeString: (str: string) => string;
+export declare const validateObjectId: (id: string) => boolean;

@@ -5,9 +5,9 @@ import { useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import axios from 'axios';
-import { format } from 'date-fns'; // Import date-fns for formatting
+import { format } from 'date-fns';
+import Header from '@/components/Header';
 
-// Define an interface for the order structure
 interface Order {
   id: string;
   orderNumber: string;
@@ -54,37 +54,32 @@ interface Customer {
 export default function Dashboard() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const [orders, setOrders] = useState<Order[]>([]); // Use the Order interface
+  const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('all');
-  const [syncStatus, setSyncStatus] = useState('idle'); // idle, syncing, success, error
+  const [syncStatus, setSyncStatus] = useState('idle');
 
   useEffect(() => {
-    console.log(session, ": session data console");
 
     if (status === 'unauthenticated') {
       router.push('/login');
     }
   }, [status, router]);
 
-  // Function to fetch orders (this now implicitly triggers backend sync via the API route)
   const fetchOrders = async () => {
-    setIsLoading(true); // Set loading true when fetching starts
-    let success = false; // Track success for handleSync
+    setIsLoading(true);
     try {
-      // Fetch from the API endpoint that handles both fetching and backend sync
       const response = await axios.get('/api/shopify/orders');
-      console.log(response.data, " : orders from /api/shopify/orders");
 
       if (response.data.success && Array.isArray(response.data.orders)) {
-        setOrders(response.data.orders.map((order: any): Order => ({ // Map to the Order interface
-          id: order.id.toString(), // Ensure ID is string
-          orderNumber: order.order_number || order.name?.replace('#', '') || `ID:${order.id}`, // Fallback if order_number is missing
+        setOrders(response.data.orders.map((order: any): Order => ({
+          id: order.id.toString(),
+          orderNumber: order.order_number || order.name?.replace('#', '') || `ID:${order.id}`,
           customer: order.customer,
-          date: order.created_at, // Store original date
+          date: order.created_at,
           formattedDate: order.created_at ? format(new Date(order.created_at), 'MMM d, h:mm a') : 'N/A',
           channel: order.source_name || 'Online Store',
-          total: order.currency ? `¥${order.total_price}` : `$${order.total_price}`,
+          total: order.currency ? `${order.currency}${order.total_price}` : `$${order.total_price}`,
           paymentStatus: order.financial_status || 'Pending',
           note: order.note,
           fulfillmentStatus: order.fulfillment_status || 'Unfulfilled',
@@ -93,43 +88,32 @@ export default function Dashboard() {
           deliveryMethod: order.shipping_lines?.[0]?.title || 'Shipping',
           tags: order.tags || ''
         })));
-        success = true; // Mark as successful
-      } else {
-        console.error('Error fetching orders: API response unsuccessful or invalid format', response.data?.error);
-        setOrders([]); // Set to empty array on error
       }
     } catch (error: any) {
-      console.error('Error fetching orders:', error.response?.data || error.message);
-      setOrders([]); // Set to empty array on error
+      console.error('Error fetching orders:', error);
+      setOrders([]);
     } finally {
       setIsLoading(false);
     }
-    // Return success status so handleSync knows if it worked
-    return success;
   };
 
   useEffect(() => {
     if (status === 'authenticated') {
-      fetchOrders(); // Fetch orders when authenticated
+      fetchOrders();
     }
-  }, [status]); // Rerun when status changes
+  }, [status]);
 
-  // Keep handleSync as is, or update it if needed for other actions
   const handleSync = async () => {
     setSyncStatus('syncing');
-    const fetchSuccess = await fetchOrders(); // Call fetchOrders and get its success status
-
-    if (fetchSuccess) {
-      setSyncStatus('success'); // Set success if fetchOrders reported success
-    } else {
-      setSyncStatus('error'); // Set error if fetchOrders reported failure
+    try {
+      await fetchOrders();
+      setSyncStatus('success');
+    } catch (error) {
+      setSyncStatus('error');
     }
-
-    // Reset status after a delay
     setTimeout(() => setSyncStatus('idle'), 3000);
   };
 
-  // Filter orders based on active tab
   const filteredOrders = (() => {
     switch (activeTab) {
       case 'all':
@@ -167,30 +151,8 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <div className="flex items-center">
-            <h1 className="text-xl font-bold text-indigo-600">WMS-PUSHER</h1>
-          </div>
-          <div className="flex items-center space-x-4">
-            {/* Add Inventory Link */}
-            <Link href="/inventory" className="text-gray-600 hover:text-gray-900">
-              Inventory
-            </Link>
-            <span className="text-sm text-gray-700">
-              Welcome, {session?.user?.name || 'User'}
-            </span>
-            <Link href="/api/auth/signout" className="px-4 py-2 rounded-md bg-gray-200 text-gray-700 hover:bg-gray-300 transition-colors">
-              Logout
-            </Link>
-          </div>
-        </div>
-      </header>
-
-      {/* Main Content */}
+      <Header />
       <main className="max-w-[1520px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Dashboard Header */}
         <div className="md:flex md:items-center md:justify-between mb-8">
           <div className="flex-1 min-w-0">
             <h2 className="text-2xl font-bold leading-7 text-gray-900 sm:text-3xl sm:truncate">Orders</h2>
@@ -215,7 +177,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Sync Status Message */}
         {syncStatus === 'success' && (
           <div className="mb-6 bg-green-50 border-l-4 border-green-400 p-4">
             <div className="flex">
@@ -324,7 +285,7 @@ export default function Dashboard() {
                         </span>
                       </td>
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-500">
-                        {order.formattedDate} {/* Display formatted date */}
+                        {order.formattedDate}
                       </td>
                       <td className="px-4 py-2 whitespace-nowrap text-sm text-gray-900">
                         {order.customer

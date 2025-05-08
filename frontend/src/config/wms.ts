@@ -2,7 +2,7 @@ export const WMS_CONFIG = {
   // WMS API Configuration
   API_URL: process.env.WMS_API_URL || 'http://your-wms-api-url',
   API_KEY: process.env.WMS_API_KEY,
-  
+
   // WMS Status Mapping
   STATUS_MAPPING: {
     PENDING: 'pending',
@@ -22,10 +22,6 @@ export const WMS_CONFIG = {
       SYNC: '/orders/sync',
       STATUS: '/orders/:id/status',
       UPDATE: '/orders/:id/update'
-    },
-    INVENTORY: {
-      SYNC: '/inventory/sync',
-      STATUS: '/inventory/status'
     }
   },
 

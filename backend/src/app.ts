@@ -6,11 +6,15 @@ import morgan from 'morgan';
 import { errorHandler, notFoundHandler } from './middleware/error.middleware.js';
 import config from './config/config.js';
 import connectDB from './config/database.js';
+import mongoose from 'mongoose';
+import dotenv from 'dotenv';
 
 // Import routes
 import authRoutes from './routes/auth.routes.js';
 import orderRoutes from './routes/order.routes.js';
 import wmsRoutes from './routes/wms.routes.js';
+
+dotenv.config();
 
 const app: Express = express();
 
@@ -45,7 +49,17 @@ app.get('/health', (_req, res) => {
     });
 });
 
+// MongoDB connection
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/wms-pusher')
+    .then(() => console.log('Connected to MongoDB'))
+    .catch((err) => console.error('MongoDB connection error:', err));
+
 app.use(notFoundHandler);
 app.use(errorHandler);
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
+});
 
 export default app; 

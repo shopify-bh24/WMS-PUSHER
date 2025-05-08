@@ -18,7 +18,7 @@ export const validatePhoneNumber = (phone: string): boolean => {
 
 export const validateRequiredFields = (data: any, requiredFields: string[]): void => {
   const missingFields = requiredFields.filter(field => !data[field]);
-  
+
   if (missingFields.length > 0) {
     throw new ValidationError(`Missing required fields: ${missingFields.join(', ')}`);
   }

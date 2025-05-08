@@ -1,27 +1,20 @@
-import express, { Request, Response } from 'express';
+import express from 'express';
 import { asyncHandler } from '../middleware/error.middleware.js';
 import { authenticate } from '../middleware/auth.middleware.js';
+import { register, login, getCurrentUser, logout } from '../controllers/auth.controller';
 
 const router = express.Router();
 
 // Register new user
-router.post('/register', asyncHandler(async (req: Request, res: Response) => {
-    res.status(201).json({ message: 'User registered successfully' });
-}));
+router.post('/register', asyncHandler(register));
 
 // Login user
-router.post('/login', asyncHandler(async (req: Request, res: Response) => {
-    res.json({ message: 'Login successful' });
-}));
+router.post('/login', asyncHandler(login));
 
 // Get current user
-router.get('/me', authenticate, asyncHandler(async (req: Request, res: Response) => {
-    res.json({ message: 'Current user retrieved' });
-}));
+router.get('/me', authenticate, asyncHandler(getCurrentUser));
 
 // Logout user
-router.post('/logout', authenticate, asyncHandler(async (req: Request, res: Response) => {
-    res.json({ message: 'Logged out successfully' });
-}));
+router.post('/logout', authenticate, asyncHandler(logout));
 
 export default router; 

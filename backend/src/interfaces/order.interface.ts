@@ -101,7 +101,6 @@ export interface ICustomer {
   note?: string;
   phone?: string;
   sms_marketing_consent?: ISmsMarketingConsent;
-  tags?: string[];
   tax_exempt?: boolean;
   tax_exemptions?: string[];
   updated_at?: Date;
@@ -113,7 +112,7 @@ export interface IOrder extends Document {
   orderNumber: string;
   name: string;
   customer: ICustomer;
-  lineItems: ILineItem[];
+  line_items: ILineItem[];
   shippingLines: IShippingLine[];
   shipping_address?: IShippingAddress;
   billing_address?: IAddress;
@@ -125,7 +124,7 @@ export interface IOrder extends Document {
   totalTax?: string;
   totalDiscounts?: string;
   totalLineItemsPrice?: string;
-  tags?: string[];
+  tags?: string;
   note?: string;
   sourceName?: string;
   processedAt?: Date;

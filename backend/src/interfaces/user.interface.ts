@@ -1,12 +1,14 @@
 import { Document } from 'mongoose';
 
-export type UserRole = 'admin' | 'user';
+export enum UserRole {
+  ADMIN = 'ADMIN',
+  USER = 'USER'
+}
 
 export interface IUser extends Document {
   username: string;
   password: string;
   role: UserRole;
-  email?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -15,7 +17,6 @@ export interface IUserResponse {
   id: string;
   username: string;
   role: UserRole;
-  email?: string;
 }
 
 export interface ILoginRequest {
@@ -23,8 +24,9 @@ export interface ILoginRequest {
   password: string;
 }
 
-export interface IRegisterRequest extends ILoginRequest {
-  email?: string;
+export interface IRegisterRequest {
+  username: string;
+  password: string;
   role?: UserRole;
 }
 

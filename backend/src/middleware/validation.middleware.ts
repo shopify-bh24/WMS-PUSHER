@@ -31,7 +31,7 @@ export const validateRegister = (
     next: NextFunction
 ): void => {
     try {
-        const { username, password, email } = req.body;
+        const { username, password } = req.body;
 
         validateRequiredFields(req.body, ['username', 'password']);
 
@@ -41,9 +41,9 @@ export const validateRegister = (
             );
         }
 
-        if (email && !validateEmail(email)) {
-            throw new ValidationError('Invalid email format');
-        }
+        // if (email && !validateEmail(email)) {
+        //     throw new ValidationError('Invalid email format');
+        // }
 
         next();
     } catch (error) {
