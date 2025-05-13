@@ -6,6 +6,7 @@ interface Config {
     JWT_EXPIRES_IN: string;
     CORS_ORIGIN: string;
     LOG_LEVEL: string;
+    SHOPIFY_WEBHOOK_SECRET: string;
 }
 declare const config: Config;
 export default config;

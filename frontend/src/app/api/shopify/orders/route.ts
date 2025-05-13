@@ -3,8 +3,9 @@ import { getShopifyOrders } from '@/lib/shopify';
 import axios from 'axios';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '../../../../lib/auth';
+import config from '@/config';
 
-const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5000';
+const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || process.env.BACKEND_URL;
 
 export async function GET() {
     try {

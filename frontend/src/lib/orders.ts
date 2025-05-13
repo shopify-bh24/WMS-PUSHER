@@ -1,6 +1,7 @@
 import axios from 'axios';
+import config from '@/config';
 
-const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5000';
+const BACKEND_API_URL = process.env.BACKEND_URL || 'http://localhost:5000';
 
 export const saveOrders = async (orders: any[]) => {
     try {
@@ -12,4 +13,4 @@ export const saveOrders = async (orders: any[]) => {
         console.error('Error saving orders to backend:', error);
         throw new Error(error.response?.data?.message || 'Failed to save orders');
     }
-}; 
+};

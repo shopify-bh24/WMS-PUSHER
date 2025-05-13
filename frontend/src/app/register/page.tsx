@@ -3,11 +3,12 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import axios from 'axios';
+import config from '@/config';
 
 export default function RegisterPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState('user'); // Default role
+  const [role, setRole] = useState('warehouse'); // Default role to warehouse
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -18,22 +19,22 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      const response = await axios.post('http://localhost:5000/api/auth/register', {
+      const response = await axios.post(`/api/auth/register`, {
         username,
         password,
         role
       });
 
-      if (response.data.message === "User registered successfully") {
-        // Registration successful, redirect to login or dashboard
-        alert('Registration successful! Please log in.'); // Simple feedback
-        router.push('/login'); // Redirect to login page after registration
+      // Check if the registration was successful based on success flag
+      if (response.data.success) {
+        alert('Registration successful! Please log in.');
+        router.push('/login');
       } else {
-        setError(response.data.message || 'Registration failed.');
+        setError(response.data.error || 'Registration failed.');
       }
     } catch (err: any) {
       console.error('Registration request failed:', err);
-      setError(err.response?.data?.error || 'An unexpected error occurred.');
+      setError(err.response?.data?.error || err.response?.data?.message || 'An unexpected error occurred.');
     } finally {
       setLoading(false);
     }
@@ -105,7 +106,7 @@ export default function RegisterPage() {
                   value={role}
                   onChange={(e) => setRole(e.target.value)}
                 >
-                  <option value="user" className='text-black'>Warehouse Staff</option>
+                  <option value="warehouse" className='text-black'>Warehouse Staff</option>
                   <option value="admin" className='text-black'>Admin</option>
                 </select>
               </div>

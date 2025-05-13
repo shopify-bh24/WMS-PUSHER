@@ -128,7 +128,7 @@ export interface IOrder extends Document {
     billing_address: Address;
     line_items: LineItem[];
     shipping_lines: ShippingLine[];
-    tags: string;
+    tags: string[];
     note: string | null;
     note_attributes: Array<{
         name: string;

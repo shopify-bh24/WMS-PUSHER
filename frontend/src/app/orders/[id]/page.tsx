@@ -10,6 +10,7 @@ import 'react-phone-number-input/style.css';
 import { getSession } from 'next-auth/react';
 import Header from '@/components/Header';
 import { toast } from 'react-toastify';
+import config from '@/config';
 
 const PhoneInput = dynamic(
   () => import('react-phone-number-input').then(mod => mod.default),
@@ -388,6 +389,30 @@ const formatCurrency = (amount: number, currencyCode: string): string => {
   return new Intl.NumberFormat(undefined, options).format(amount);
 };
 
+const getDiscountDetails = (lineItems: any[]): { name: string, amount: number }[] => {
+  const discountMap = new Map<string, number>();
+
+  lineItems.forEach(item => {
+    if (item.discount_allocations && item.discount_allocations.length > 0) {
+      item.discount_allocations.forEach((discount: any) => {
+        const discountTitle = discount.discount_application?.title || 'Custom discount';
+        const discountAmount = parseFloat(discount.amount || '0');
+
+        if (discountMap.has(discountTitle)) {
+          discountMap.set(discountTitle, discountMap.get(discountTitle)! + discountAmount);
+        } else {
+          discountMap.set(discountTitle, discountAmount);
+        }
+      });
+    }
+  });
+
+  console.log(discountMap, " : discountMap");
+
+
+  return Array.from(discountMap.entries()).map(([name, amount]) => ({ name, amount }));
+};
+
 const initialOrderState: OrderState = {
   id: '',
   shopify_order_id: '',
@@ -762,6 +787,7 @@ export default function OrderDetail() {
             properties: item.properties || [],
             variant_id: item.variant_id,
             product_id: item.product_id,
+            discount_allocations: item.discount_allocations || [],
           })),
           delivery_method: shopifyOrder.shipping_lines?.[0]?.title || 'Shipping',
           notes: shopifyOrder.note || null,
@@ -984,7 +1010,7 @@ export default function OrderDetail() {
 
       await axios.put(`/api/shopify/orders/${params!.id}`, requestData);
 
-      await axios.put(`http://localhost:5000/api/orders/${params!.id}`, {
+      await axios.put(`api/orders/${params!.id}`, {
         note: editableNotes || null
       });
 
@@ -1059,9 +1085,12 @@ export default function OrderDetail() {
           customer: {
             id: customerId,
             email: order.customer.email,
-            first_name: order.customer.first_name,
-            last_name: order.customer.last_name,
+            first_name: order.shipping_address.first_name,
+            last_name: order.shipping_address.last_name,
             phone: order.customer.phone,
+            name: order.shipping_address.first_name && order.shipping_address.last_name
+              ? `${order.shipping_address.first_name} ${order.shipping_address.last_name}`
+              : null
           },
           shipping_address: {
             first_name: order.shipping_address.first_name,
@@ -1101,14 +1130,14 @@ export default function OrderDetail() {
       });
 
 
-      await axios.put(`http://localhost:5000/api/orders/${params!.id}`, {
+      await axios.put(`/api/orders/${params!.id}`, {
         email: order.customer.email,
         tags: Array.isArray(order.tags) ? order.tags.join(', ') : (typeof order.tags === 'string' ? order.tags : ''),
         customer: {
           ...order.customer,
           email: order.customer.email,
-          first_name: order.customer.first_name,
-          last_name: order.customer.last_name,
+          first_name: order.shipping_address.first_name,
+          last_name: order.shipping_address.last_name,
           phone: order.customer.phone,
         },
         shipping_address: {
@@ -1136,9 +1165,12 @@ export default function OrderDetail() {
         customer: {
           ...prev.customer,
           email: order.customer.email,
-          first_name: order.customer.first_name,
-          last_name: order.customer.last_name,
+          first_name: order.shipping_address.first_name,
+          last_name: order.shipping_address.last_name,
           phone: order.customer.phone,
+          name: order.shipping_address.first_name && order.shipping_address.last_name
+            ? `${order.shipping_address.first_name} ${order.shipping_address.last_name}`
+            : null
         },
         tags: Array.isArray(order.tags) ? order.tags.join(', ') : (typeof order.tags === 'string' ? order.tags : ''),
         shipping_address: {
@@ -1239,51 +1271,89 @@ export default function OrderDetail() {
               <div className="p-4 sm:p-6 space-y-4">
                 <p className="text-sm text-gray-500">Delivery method: {order.delivery_method}</p>
                 {itemsWithImages.map((item: any) => (
-                  <div key={item.id} className="flex items-center space-x-4">
-                    <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center">
-                      {item.image_url ? (
-                        <img src={item.image_url} alt={item.name} className="h-full w-full object-cover rounded" />
+                  <div key={item.id} className="flex flex-col">
+                    <div className="flex items-center space-x-5 row gap-4">
+                      <div className="w-12 h-12 bg-gray-200 rounded flex items-center justify-center">
+                        {item.image_url ? (
+                          <img src={item.image_url} alt={item.name} className="h-full w-full object-cover rounded" />
+                        ) : (
+                          <svg className="h-6 w-6 text-gray-400" /* Placeholder icon */ >...</svg>
+                        )}
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-indigo-600 hover:underline cursor-pointer">{item.name}</p>
+                        <p className="text-xs text-gray-500">{item.variant_title}</p>
+                      </div>
+
+                      {item.discount_allocations && item.discount_allocations.length > 0 ? (
+                        <div className="flex items-center space-x-4 text-right">
+                          <div className="flex flex-row gap-2 justify-center items-center text-sm text-gray-500">
+                            <div className="line-through text-xs text-gray-400">
+                              {(() => {
+                                const discountAmount = item.discount_allocations.reduce((total: number, discount: any) =>
+                                  total - parseFloat(discount.amount || '0'), 0);
+
+                                const discountedPrice = typeof item.price === 'string'
+                                  ? parseFloat(item.price.replace(/[^0-9.-]+/g, ''))
+                                  : parseFloat(item.price);
+
+                                const quantity = item.quantity || 1;
+                                const discountPerItem = discountAmount / quantity;
+                                const originalPrice = discountedPrice + discountPerItem;
+
+                                return formatCurrency(originalPrice, order.currency);
+                              })()}
+                            </div>
+                            <div className="flex items-center justify-end">
+                              <span>{item.price}</span>
+                              <span className="mx-1">×</span>
+                              <span>{tempQuantities[item.id] || item.quantity}</span>
+                            </div>
+                          </div>
+                          <div className="text-sm font-medium text-gray-900 ml-2">{item.total}</div>
+                        </div>
                       ) : (
-                        <svg className="h-6 w-6 text-gray-400" /* Placeholder icon */ >...</svg>
+                        <div className="flex items-center space-x-2 text-right">
+                          <div className="text-sm text-gray-500">
+                            <div className="flex items-center justify-end">
+                              <span>{item.price}</span>
+                              <span className="mx-1">×</span>
+                              <span>{tempQuantities[item.id] || item.quantity}</span>
+                            </div>
+                          </div>
+                          <div className="text-sm font-medium text-gray-900 ml-2">{item.total}</div>
+                        </div>
                       )}
                     </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-indigo-600 hover:underline cursor-pointer">{item.name}</p>
-                      <p className="text-xs text-gray-500">{item.variant_title}</p>
-                    </div>
-                    <div className="text-sm text-gray-500 flex items-center space-x-2">
-                      {/* <button
-                        onClick={() => handleLocalQuantityChange(item.id, Math.max(1, (tempQuantities[item.id] || item.quantity) - 1))}
-                        className="px-2 py-1 border rounded hover:bg-gray-100"
-                        disabled={isUpdating}
-                      >
-                        -
-                      </button> */}
-                      <span>{tempQuantities[item.id] || item.quantity}</span>
-                      {/* <button
-                        onClick={() => handleLocalQuantityChange(item.id, (tempQuantities[item.id] || item.quantity) + 1)}
-                        className="px-2 py-1 border rounded hover:bg-gray-100"
-                        disabled={isUpdating}
-                      >
-                        +
-                      </button> */}
-                      <span className="ml-2">x {item.price}</span>
-                    </div>
-                    <div className="text-sm font-medium text-gray-900">{item.total}</div>
+
+                    {item.discount_allocations && item.discount_allocations.length > 0 && (
+                      <div className="ml-16 mt-1 flex items-center">
+                        <svg className="h-4 w-4 text-gray-400 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span className="text-xs text-gray-500">
+                          Custom discount ({(() => {
+                            const discountAmount = item.discount_allocations.reduce((total: number, discount: any) =>
+                              total + parseFloat(discount.amount || '0'), 0);
+
+                            const discountedPrice = typeof item.price === 'string'
+                              ? parseFloat(item.price.replace(/[^0-9.-]+/g, ''))
+                              : parseFloat(item.price);
+
+                            const quantity = item.quantity || 1;
+                            const discountPerItem = discountAmount / quantity;
+                            const originalPrice = discountedPrice + discountPerItem;
+
+                            // Calculate discount percentage based on original price
+                            const discountPercentage = Math.round((discountAmount / (originalPrice * quantity)) * 100);
+                            return `-${discountPercentage}%`;
+                          })()})
+                        </span>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
-              {/* {Object.keys(tempQuantities).length > 0 && (
-                <div className="mt-4 flex justify-end">
-                  <button
-                    onClick={handleUpdateQuantities}
-                    disabled={isUpdating}
-                    className="px-4 py-2 bg-indigo-600 text-white rounded hover:bg-indigo-700 disabled:opacity-50"
-                  >
-                    {isUpdating ? 'Updating...' : 'Update Quantities'}
-                  </button>
-                </div>
-              )} */}
             </div>
 
             <div className="bg-white shadow overflow-hidden sm:rounded-lg">
@@ -1304,6 +1374,28 @@ export default function OrderDetail() {
                   <span className="text-gray-500">CT 10%</span>
                   <span className="text-gray-900">{order.total_tax.toFixed(2)}</span>
                 </div>
+                {order.total_discounts > 0 && (
+                  <>
+                    {getDiscountDetails(order.line_items).map((discount, index) => (
+                      <div key={index} className="flex justify-between text-sm">
+                        <span className="text-gray-500">{discount.name}</span>
+                        <span className="text-red-500">-{formatCurrency(discount.amount, order.currency)}</span>
+                      </div>
+                    ))}
+                    {order.line_items.some(item => item.properties && item.properties.some(prop => prop.name === '_discount')) && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Custom discount</span>
+                        <span className="text-red-500">-{formatCurrency(order.total_discounts, order.currency)}</span>
+                      </div>
+                    )}
+                    {getDiscountDetails(order.line_items).length === 0 && (
+                      <div className="flex justify-between text-sm">
+                        <span className="text-gray-500">Discount</span>
+                        <span className="text-red-500">-{formatCurrency(order.total_discounts, order.currency)}</span>
+                      </div>
+                    )}
+                  </>
+                )}
                 {parseFloat(order.total_shipping_price_set.shop_money.amount.replace(/[^0-9.-]+/g, "")) > 0 && (
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-500">Shipping</span>

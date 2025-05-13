@@ -14,7 +14,10 @@ export const register = async (req: Request, res: Response) => {
         // Check if user already exists
         const existingUser = await User.findOne({ username });
         if (existingUser) {
-            throw new AppError(400, 'Username already exists');
+            return res.status(400).json({
+                success: false,
+                message: 'Username already exists'
+            });
         }
 
         // Hash password
@@ -34,25 +37,36 @@ export const register = async (req: Request, res: Response) => {
         });
     } catch (error: any) {
         console.error('Registration error:', error);
-        throw new AppError(500, error.message || 'Registration failed');
+        return res.status(500).json({
+            success: false,
+            message: 'Registration failed: ' + (error.message || 'Unknown error')
+        });
     }
 };
 
 // Login user
-export const login = async (req: Request<{}, {}, ILoginRequest>, res: Response) => {
+export const login = async (req: Request<{}, {}, ILoginRequest>, res: Response): Promise<Response> => {
     const { username, password } = req.body;
+
+    console.log(req.body);
 
     try {
         // Find user
         const user = await User.findOne({ username });
         if (!user) {
-            throw new AppError(401, 'Invalid username or password');
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid username or password'
+            });
         }
 
         // Verify password
         const isValidPassword = await bcrypt.compare(password, user.password);
         if (!isValidPassword) {
-            throw new AppError(401, 'Invalid username or password');
+            return res.status(401).json({
+                success: false,
+                message: 'Invalid username or password'
+            });
         }
 
         // Generate JWT token
@@ -78,7 +92,10 @@ export const login = async (req: Request<{}, {}, ILoginRequest>, res: Response) 
         });
     } catch (error: any) {
         console.error('Login error:', error);
-        throw new AppError(500, error.message || 'Login failed');
+        return res.status(500).json({
+            success: false,
+            message: 'Login failed: ' + (error.message || 'Unknown error')
+        });
     }
 };
 
@@ -89,7 +106,10 @@ export const getCurrentUser = async (req: Request, res: Response) => {
         const user = req.user;
 
         if (!user) {
-            throw new AppError(401, 'User not authenticated');
+            return res.status(401).json({
+                success: false,
+                message: 'User not authenticated'
+            });
         }
 
         return res.json({
@@ -102,7 +122,10 @@ export const getCurrentUser = async (req: Request, res: Response) => {
         });
     } catch (error: any) {
         console.error('Get current user error:', error);
-        throw new AppError(500, error.message || 'Failed to get current user');
+        return res.status(500).json({
+            success: false,
+            message: 'Failed to get current user: ' + (error.message || 'Unknown error')
+        });
     }
 };
 
@@ -117,6 +140,9 @@ export const logout = async (req: Request, res: Response) => {
         });
     } catch (error: any) {
         console.error('Logout error:', error);
-        throw new AppError(500, error.message || 'Logout failed');
+        return res.status(500).json({
+            success: false,
+            message: 'Logout failed: ' + (error.message || 'Unknown error')
+        });
     }
 };

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getShopifyRestClient } from '@/lib/shopify'; // Adjust path if needed
+import config from '@/config';
 
 interface RouteParams {
     params: { id: string };
@@ -115,7 +116,7 @@ export async function PUT(request: Request, { params }: RouteParams) {
             throw new Error('Failed to update order in Shopify');
         }
 
-        const backendResponse = await fetch(`http://localhost:5000/api/orders/${id}`, {
+        const backendResponse = await fetch(`${process.env.BACKEND_URL}/api/orders/${id}`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
@@ -174,70 +175,3 @@ export async function PUT(request: Request, { params }: RouteParams) {
         );
     }
 }
-
-// export async function PUT(request: Request, context: { params: { id: string } }) {
-//     try {
-//         const { id } = await Promise.resolve(context.params);
-//         const body = await request.json();
-
-//         if (!id) {
-//             return NextResponse.json({ success: false, error: 'Order ID is required' }, { status: 400 });
-//         }
-
-//         if (!body.order) {
-//             return NextResponse.json({ success: false, error: 'Order data is required' }, { status: 400 });
-//         }
-
-//         const client = await getShopifyRestClient();
-
-//         // Update Shopify order
-//         const shopifyResponse = await client.put({
-//             path: `orders/${id}`,
-//             data: {
-//                 order: {
-//                     id: id,
-//                     shipping_address: body.order.shipping_address,
-//                     billing_address: body.order.billing_address,
-//                     customer: body.order.customer,
-//                     note: body.order.note,
-//                     fulfillment_status: body.order.fulfillment_status
-//                 }
-//             }
-//         });
-
-//         if (!shopifyResponse.body?.order) {
-//             throw new Error('Failed to update order in Shopify');
-//         }
-
-//         // Update MongoDB
-//         const backendResponse = await fetch(`http://localhost:5000/api/orders/${id}`, {
-//             method: 'PUT',
-//             headers: {
-//                 'Content-Type': 'application/json',
-//             },
-//             body: JSON.stringify({
-//                 customer: body.order.customer,
-//                 shipping_address: body.order.shipping_address,
-//                 billing_address: body.order.billing_address,
-//                 note: body.order.note,
-//                 fulfillment_status: body.order.fulfillment_status
-//             })
-//         });
-
-//         if (!backendResponse.ok) {
-//             throw new Error('Failed to update order in database');
-//         }
-
-//         return NextResponse.json({
-//             success: true,
-//             order: shopifyResponse.body.order
-//         });
-
-//     } catch (error: any) {
-//         console.error('Error updating order:', error);
-//         return NextResponse.json(
-//             { success: false, error: error.message || 'Failed to update order' },
-//             { status: 500 }
-//         );
-//     }
-// }

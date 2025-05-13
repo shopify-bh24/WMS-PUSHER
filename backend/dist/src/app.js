@@ -17,7 +17,7 @@ connectDB();
 app.use(helmet());
 app.use(compression());
 app.use(cors({
-    origin: config.CORS_ORIGIN,
+    origin: [config.CORS_ORIGIN],
     credentials: true
 }));
 app.use(express.json());

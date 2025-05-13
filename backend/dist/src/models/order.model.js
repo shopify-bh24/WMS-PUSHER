@@ -238,7 +238,7 @@ const OrderSchema = new Schema({
             requested_fulfillment_service_id: String,
             is_removed: Boolean
         }],
-    tags: String,
+    tags: [String],
     note: String,
     note_attributes: [{
             name: String,

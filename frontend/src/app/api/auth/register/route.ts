@@ -1,10 +1,5 @@
 import { NextResponse } from 'next/server';
-// Remove bcrypt import if not used directly here, it's handled in db.ts
-// import { hash } from 'bcrypt'; 
-import { addUser, findUserByUsername } from '@/lib/db'; // Import shared DB functions
-
-// Remove the local mock database
-// const mockUserDatabase: any[] = [];
+import axios from 'axios';
 
 export async function POST(request: Request) {
   try {
@@ -26,36 +21,53 @@ export async function POST(request: Request) {
       );
     }
 
-    // Check if user already exists using the shared function
-    const existingUser = await findUserByUsername(username);
-    if (existingUser) {
+    // Forward the request to the backend
+    const backendResponse = await axios.post(
+      `${process.env.BACKEND_URL}/api/auth/register`,
+      { username, password, role },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    // Transform backend response to match expected frontend format
+    return NextResponse.json(
+      {
+        success: true,
+        message: "User registered successfully",
+        user: backendResponse.data.user
+      },
+      { status: 201 }
+    );
+
+  } catch (error: any) {
+    console.error('Registration error:', error.response?.data || error);
+
+    // Handle different error cases
+    if (error.response) {
+      // The request was made and the server responded with a status code
+      // that falls out of the range of 2xx
+      const status = error.response.status || 500;
+      const message = error.response.data?.message || 'Registration failed';
+
       return NextResponse.json(
-        { success: false, error: 'Username already exists' },
-        { status: 409 } // Conflict
+        { success: false, error: message },
+        { status }
+      );
+    } else if (error.request) {
+      // The request was made but no response was received
+      return NextResponse.json(
+        { success: false, error: 'No response from authentication server' },
+        { status: 503 }
+      );
+    } else {
+      const errorMessage = error.message || 'Internal server error during registration';
+      return NextResponse.json(
+        { success: false, error: errorMessage },
+        { status: 500 }
       );
     }
-
-    // Add the new user using the shared function (hashing is handled inside)
-    const newUser = await addUser({ username, password, role });
-
-    console.log('New user registered via API:', { id: newUser.id, username: newUser.username, role: newUser.role });
-
-    // Return only non-sensitive user info
-    return NextResponse.json(
-      { 
-        success: true, 
-        user: newUser // The addUser function already returns the user without the password
-      },
-      { status: 201 } // Created
-    );
-
-  } catch (error) {
-    console.error('Registration error:', error);
-    // Check if it's a known error type or provide a generic message
-    const errorMessage = error instanceof Error ? error.message : 'Internal server error during registration';
-    return NextResponse.json(
-      { success: false, error: errorMessage },
-      { status: 500 }
-    );
   }
 }

@@ -1,4 +1,5 @@
 import { Session } from "next-auth";
+import config from "@/config";
 
 declare module "next-auth" {
   interface Session {
@@ -24,13 +25,21 @@ const handler = NextAuth({
         password: { label: "Password", type: "password" }
       },
       async authorize(credentials, req) {
+        if (!credentials?.username || !credentials?.password) {
+          console.error("Missing credentials");
+          throw new Error("Missing username or password");
+        }
+
         try {
-          const response = await axios.post('http://localhost:5000/api/auth/login', {
-            username: credentials?.username,
-            password: credentials?.password
+          console.log(`Attempting login for user: ${credentials.username}`);
+          
+          const response = await axios.post(`${process.env.BACKEND_URL}/api/auth/login`, {
+            username: credentials.username,
+            password: credentials.password
           });
 
           if (response.data && response.data.token) {
+            console.log("Login successful");
             // Return user object that will be saved in the JWT
             return {
               id: response.data.user.id,
@@ -40,9 +49,13 @@ const handler = NextAuth({
               token: response.data.token
             };
           }
-          return null;
-        } catch (error) {
-          return null;
+          
+          console.error("Invalid response format from API:", response.data);
+          throw new Error("Invalid response from authentication server");
+        } catch (error: any) {
+          console.error("Login error:", error.response?.data || error.message);
+          // Throw specific error message that came from the backend if available
+          throw new Error(error.response?.data?.message || "Authentication failed");
         }
       }
     })
@@ -68,10 +81,12 @@ const handler = NextAuth({
   },
   pages: {
     signIn: '/login',
+    error: '/login', // Add error page redirection
   },
   session: {
     strategy: 'jwt',
   },
+  debug: process.env.NODE_ENV === 'development', // Enable debug in development
   secret: process.env.NEXTAUTH_SECRET
 });
 

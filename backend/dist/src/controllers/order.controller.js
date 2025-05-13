@@ -169,52 +169,12 @@ export const updateOrder = async (req, res) => {
         if (!existingOrder) {
             throw new AppError(404, 'Order not found');
         }
-        let tags = [];
-        if (updateData.tags) {
-            if (Array.isArray(updateData.tags)) {
-                tags = updateData.tags;
-            }
-            else if (typeof updateData.tags === 'string') {
-                tags = updateData.tags.split(',').map((tag) => tag.trim()).filter(Boolean);
-            }
-        }
         const formattedData = {
             ...updateData,
             updated_at: new Date().toISOString(),
-            email: updateData.email,
-            customer: {
-                ...updateData.customer,
-            },
-            tags: tags,
-            line_items: updateData.line_items?.map((item) => ({
-                id: item.id,
-                title: item.title || item.name,
-                quantity: item.quantity,
-                price: typeof item.price === 'string'
-                    ? parseFloat(item.price.replace(/[^0-9.-]+/g, ""))
-                    : item.price,
-                sku: item.sku,
-                variant_title: item.variant_title,
-                fulfillment_status: item.fulfillment_status,
-                fulfillment_service: item.fulfillment_service,
-                grams: item.grams,
-                product_id: item.product_id,
-                variant_id: item.variant_id,
-                vendor: item.vendor,
-                gift_card: item.gift_card,
-                price_set: item.price_set,
-                properties: item.properties,
-                taxable: item.taxable,
-                tax_lines: item.tax_lines,
-                total_discount: item.total_discount,
-                total_discount_set: item.total_discount_set,
-                discount_allocations: item.discount_allocations
-            }))
+            note: updateData.note,
         };
         const updatedOrder = await Order.findOneAndUpdate({ shopify_order_id: id }, { $set: formattedData }, { new: true, runValidators: true });
-        if (!updatedOrder) {
-            throw new AppError(404, 'Failed to update order');
-        }
         res.json({
             success: true,
             message: `Order ${id} updated successfully`,

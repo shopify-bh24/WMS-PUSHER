@@ -8,27 +8,37 @@ import config from './src/config/config.js';
 import authRoutes from './src/routes/auth.routes.js';
 import orderRoutes from './src/routes/order.routes.js';
 import wmsRoutes from './src/routes/wms.routes.js';
+import webhookRoutes from './src/routes/webhook.js';
+import bodyParser from "body-parser";
 
 // Create Express app
 const app: Application = express();
 
 app.use(helmet());
-app.use(compression()); // Compress responses
+app.use(compression());
 app.use(cors({
     origin: config.CORS_ORIGIN,
     credentials: true
-})); // Enable CORS
-app.use(express.json()); // Parse JSON bodies
+}));
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan(config.NODE_ENV === 'development' ? 'dev' : 'combined'));
 
-// Request logging middleware
+app.use(bodyParser.json({
+    verify: (req: any, res: any, buf: any) => {
+        console.log("Body parser verify function called!");
+        console.log("Buffer length:", buf.length);
+        req.rawBody = buf.toString();
+    }
+}));
+
+app.use(bodyParser.urlencoded({ extended: true }));
+
 app.use((req: Request, res: Response, next: NextFunction) => {
     console.log(`\x1b[42m ${req.method} ${req.url} request received.\x1b[0m`);
     next();
 });
 
-// Error handling middleware
 app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
     console.error(err.stack);
     res.status(500).json({
@@ -38,7 +48,6 @@ app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
     });
 });
 
-// Database connection
 mongoose.connect(config.MONGODB_URI)
     .then(() => {
         console.log("Connected to MongoDB");
@@ -48,21 +57,21 @@ mongoose.connect(config.MONGODB_URI)
         process.exit(1);
     });
 
-// Routes
+
 app.use("/api/auth", authRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/wms", wmsRoutes);
+app.use('/api/webhook', webhookRoutes);
+app.use('/api/notifications', webhookRoutes);
 
-// Health check endpoint
 app.get('/health', (req: Request, res: Response) => {
-    res.status(200).json({ 
+    res.status(200).json({
         status: 'ok',
         environment: config.NODE_ENV,
         timestamp: new Date().toISOString()
     });
 });
 
-// Start server
 app.listen(config.PORT, () => {
     console.log(`Server running on port ${config.PORT} in ${config.NODE_ENV} mode`);
 }); 

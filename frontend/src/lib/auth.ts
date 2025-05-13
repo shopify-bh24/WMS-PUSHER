@@ -2,8 +2,9 @@ import { NextAuthOptions, User } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { JWT } from 'next-auth/jwt';
 import axios from 'axios';
+import config from '@/config';
 
-const BACKEND_API_URL = process.env.NEXT_PUBLIC_BACKEND_API_URL || 'http://localhost:5000';
+const BACKEND_API_URL = process.env.BACKEND_URL || 'http://localhost:5000';
 
 // Extend the built-in session type
 declare module "next-auth" {
@@ -43,7 +44,6 @@ export const authOptions: NextAuthOptions = {
                         return {
                             id: response.data.user.id,
                             name: response.data.user.username,
-                            email: response.data.user.email,
                             accessToken: response.data.token
                         } as User;
                     }

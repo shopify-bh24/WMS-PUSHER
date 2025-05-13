@@ -9,7 +9,8 @@ const validateConfig = () => {
         'JWT_SECRET',
         'JWT_EXPIRES_IN',
         'CORS_ORIGIN',
-        'LOG_LEVEL'
+        'LOG_LEVEL',
+        'SHOPIFY_WEBHOOK_SECRET'
     ];
     const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
     if (missingEnvVars.length > 0) {
@@ -22,7 +23,8 @@ const validateConfig = () => {
         JWT_SECRET: process.env.JWT_SECRET,
         JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN,
         CORS_ORIGIN: process.env.CORS_ORIGIN,
-        LOG_LEVEL: process.env.LOG_LEVEL
+        LOG_LEVEL: process.env.LOG_LEVEL,
+        SHOPIFY_WEBHOOK_SECRET: process.env.SHOPIFY_WEBHOOK_SECRET
     };
 };
 const config = validateConfig();
