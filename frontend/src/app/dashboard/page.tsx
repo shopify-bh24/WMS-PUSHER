@@ -121,7 +121,6 @@ export default function Dashboard() {
       case 'unfulfilled':
         return orders.filter((order) => order.fulfillmentStatus === 'Unfulfilled' || order.fulfillmentStatus === null);
       case 'unpaid':
-        // Include various pending/unpaid statuses
         const unpaidStatuses = ['pending', 'unpaid', 'partially_paid', 'authorized', 'voided'];
         return orders.filter((order) => unpaidStatuses.includes(order.paymentStatus.toLowerCase()));
       case 'open':
@@ -132,9 +131,6 @@ export default function Dashboard() {
           !paidStatuses.includes(order.paymentStatus.toLowerCase())
         );
       case 'archived':
-        // Note: Shopify API might require specific query for archived orders.
-        // This filter assumes 'archived' status might be present in tags or a specific field.
-        // Adjust based on how you handle archived orders.
         return orders.filter((order: any) => order.status === 'Archived'); // Placeholder
       default:
         return orders;

@@ -18,7 +18,7 @@ interface Config {
 const validateConfig = (): Config => {
     const requiredEnvVars = [
         'NODE_ENV',
-        'PORT',
+        // 'PORT', // Making PORT optional with a default value
         'MONGODB_URI',
         'JWT_SECRET',
         'JWT_EXPIRES_IN',
@@ -38,7 +38,7 @@ const validateConfig = (): Config => {
 
     return {
         NODE_ENV: process.env.NODE_ENV!,
-        PORT: parseInt(process.env.PORT!, 10),
+        PORT: parseInt(process.env.PORT || '3000', 10), // Default to port 3000
         MONGODB_URI: process.env.MONGODB_URI!,
         JWT_SECRET: process.env.JWT_SECRET!,
         JWT_EXPIRES_IN: process.env.JWT_EXPIRES_IN!,
